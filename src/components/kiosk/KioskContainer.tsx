@@ -1,5 +1,3 @@
-
-
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
@@ -7,7 +5,7 @@ import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { recordAttendance, createTempRegistration } from '@/app/actions';
 import { Database } from '@/lib/types';
 import Clock from './Clock';
-import { Bell, CheckCircle2, XCircle, UserPlus, QrCode, Wifi, WifiOff } from 'lucide-react';
+import { Bell, CheckCircle2, XCircle, UserPlus, Wifi, WifiOff, Copy, Check } from 'lucide-react';
 import Image from 'next/image';
 
 type KioskState = 'idle' | 'input' | 'success' | 'error' | 'register' | 'qr' | 'processing';
@@ -30,6 +28,7 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
   const [qrExpiry, setQrExpiry] = useState<number>(0);
   const [announcement, setAnnouncement] = useState(initialAnnouncement);
   const [isOnline, setIsOnline] = useState<boolean | undefined>(undefined);
+  const [isCopied, setIsCopied] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const resetTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -197,7 +196,7 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
   }
   
   const IdleScreen = () => (
-    <div className="flex flex-col items-center justify-between h-full w-full py-8">
+    <div className="flex flex-col items-center justify-between h-full w-full py-8 px-4">
         <div className="w-full flex justify-between items-center px-8 text-xl">
             <h1 className="font-bold">STEM研究部 勤怠管理システム</h1>
             {isOnline !== undefined && (
@@ -208,7 +207,7 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
             )}
         </div>
 
-        {announcement && (
+        {announcement && announcement.is_active && (
             <div className="w-full max-w-4xl p-6 bg-blue-500/10 border border-blue-400/30 rounded-lg text-center">
             <h2 className="text-2xl font-bold mb-2 flex items-center justify-center gap-3">
                 <Bell className="text-blue-300" />
@@ -235,14 +234,15 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
     if (!qrToken) return null;
     const url = `${process.env.NEXT_PUBLIC_APP_URL}/register/${qrToken}`;
 
-    const selectText = (e: React.MouseEvent<HTMLDivElement>) => {
-        e.stopPropagation();
-        const range = document.createRange();
-        range.selectNodeContents(e.currentTarget);
-        const sel = window.getSelection();
-        sel?.removeAllRanges();
-        sel?.addRange(range);
-    }
+    const handleCopy = () => {
+        navigator.clipboard.writeText(url).then(() => {
+            setIsCopied(true);
+            setTimeout(() => setIsCopied(false), 2000);
+        }).catch(err => {
+            console.error('Failed to copy: ', err);
+            // You can add a toast notification here to inform the user about the failure.
+        });
+    };
 
     return (
       <div className="text-center flex flex-col items-center">
@@ -257,13 +257,21 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
                 priority
             />
         </div>
-        <div
-          onClick={selectText}
-          className="mt-4 bg-gray-800 hover:bg-gray-700 transition-colors p-2 rounded-md font-mono text-sm break-all max-w-sm w-full cursor-pointer select-text"
-        >
-          {url}
+        <div className="relative mt-4 w-full max-w-sm">
+            <input 
+                readOnly
+                value={url}
+                className="bg-gray-800 p-2 pr-10 rounded-md font-mono text-sm w-full border-none text-white"
+            />
+            <button
+                onClick={handleCopy}
+                className="absolute inset-y-0 right-0 flex items-center pr-3"
+            >
+                {isCopied ? <Check className="h-5 w-5 text-green-400" /> : <Copy className="h-5 w-5 text-gray-400" />}
+            </button>
         </div>
-        <p className="mt-4 text-xl max-w-md">スマートフォンでQRコードを読み取るか、上記のURLを共有して登録を完了してください。</p>
+        
+        <p className="mt-4 text-xl max-w-md">スマートフォンでQRコードを読み取るか、URLをコピーして登録を完了してください。</p>
         <QrTimer />
         <p className="text-sm text-gray-500 mt-4">※登録完了後、この画面は自動的に戻ります</p>
       </div>
@@ -315,8 +323,8 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
   };
 
   return (
-    <div className="w-full h-full bg-gray-900 text-white flex items-center justify-center overflow-hidden">
-      <div className="w-[1024px] h-[768px] bg-gray-900 border-4 border-gray-700 rounded-lg shadow-2xl relative flex flex-col items-center justify-center" onClick={() => inputRef.current?.focus()}>
+    <div className="h-screen w-screen bg-gray-900 text-white flex items-center justify-center font-body">
+      <div className="w-[1024px] h-[768px] bg-gray-900 border-4 border-gray-700 rounded-lg shadow-2xl relative flex flex-col items-center justify-center overflow-hidden" onClick={() => inputRef.current?.focus()}>
         <form onSubmit={handleFormSubmit}>
           <input
             ref={inputRef}
@@ -328,7 +336,7 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
             className="opacity-0 absolute w-0 h-0"
           />
         </form>
-        <div className="w-full h-full flex flex-col items-center justify-center">
+        <div className="w-full h-full flex flex-col items-center justify-center p-4">
           {renderState()}
         </div>
         
