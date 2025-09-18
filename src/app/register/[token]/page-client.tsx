@@ -153,10 +153,6 @@ export default function RegisterPageClient({ token, tempReg, teams, session, ful
                                 <span className="text-muted-foreground">カードID:</span>
                                 <span className="font-mono font-medium">{tempReg.card_id}</span>
                             </div>
-                            <div className="flex justify-between">
-                                <span className="text-muted-foreground">読み取り時刻:</span>
-                                <span className="font-medium">{format(new Date(tempReg.accessed_at!), 'yyyy/MM/dd HH:mm')}</span>
-                            </div>
                         </CardContent>
                     </Card>
                     
