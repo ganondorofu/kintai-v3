@@ -57,7 +57,9 @@ export default function UsersTab({ users, teams, currentUser }: UsersTabProps) {
         
         setIsSubmitting(true);
         const formData = new FormData(event.currentTarget);
-        const updatedData: Partial<Tables<'users'>> = {
+        
+        // Note: FormData values are strings, need to convert
+        const updatedData = {
             display_name: formData.get('display_name') as string,
             generation: Number(formData.get('generation')),
             team_id: Number(formData.get('team_id')),
@@ -72,19 +74,21 @@ export default function UsersTab({ users, teams, currentUser }: UsersTabProps) {
             toast({ title: "成功", description: result.message });
             
             // Log changes
-            for (const key in updatedData) {
-                const fieldName = key as keyof typeof updatedData;
-                const oldValue = editingUser[fieldName];
-                const newValue = updatedData[fieldName];
-                if (String(oldValue) !== String(newValue)) {
-                    await logUserEdit({
-                        target_user_id: editingUser.id,
-                        editor_user_id: currentUser.id,
-                        field_name: fieldName,
-                        old_value: String(oldValue),
-                        new_value: String(newValue),
-                    });
-                }
+            const changedFields = Object.keys(updatedData).filter(key => {
+                const fieldKey = key as keyof typeof updatedData;
+                // Important: Compare values after type coercion
+                return String(updatedData[fieldKey]) !== String(editingUser[fieldKey]);
+            });
+
+            for (const fieldName of changedFields) {
+                const key = fieldName as keyof typeof updatedData;
+                await logUserEdit({
+                    target_user_id: editingUser.id,
+                    editor_user_id: currentUser.id,
+                    field_name: key,
+                    old_value: String(editingUser[key]),
+                    new_value: String(updatedData[key]),
+                });
             }
 
             setDialogOpen(false);
