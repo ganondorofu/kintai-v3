@@ -7,7 +7,7 @@ import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { recordAttendance, createTempRegistration } from '@/app/actions';
 import { Database } from '@/lib/types';
 import Clock from './Clock';
-import { Bell, CheckCircle2, XCircle, UserPlus, QrCode, Wifi, WifiOff, Copy, Check } from 'lucide-react';
+import { Bell, CheckCircle2, XCircle, UserPlus, QrCode, Wifi, WifiOff } from 'lucide-react';
 import Image from 'next/image';
 
 type KioskState = 'idle' | 'input' | 'success' | 'error' | 'register' | 'qr' | 'processing';
@@ -30,7 +30,6 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
   const [qrExpiry, setQrExpiry] = useState<number>(0);
   const [announcement, setAnnouncement] = useState(initialAnnouncement);
   const [isOnline, setIsOnline] = useState<boolean | undefined>(undefined);
-  const [isCopied, setIsCopied] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const resetTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -153,7 +152,6 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
       const result = await createTempRegistration(currentInputValue);
       if (result.success && result.token) {
         setQrToken(result.token);
-        setIsCopied(false);
         setQrExpiry(Date.now() + 30 * 60 * 1000);
         setKioskState('qr');
       } else {
@@ -237,12 +235,14 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
     if (!qrToken) return null;
     const url = `${process.env.NEXT_PUBLIC_APP_URL}/register/${qrToken}`;
 
-    const handleCopy = () => {
-        navigator.clipboard.writeText(url).then(() => {
-            setIsCopied(true);
-            setTimeout(() => setIsCopied(false), 2000);
-        });
-    };
+    const selectText = (e: React.MouseEvent<HTMLDivElement>) => {
+        e.stopPropagation();
+        const range = document.createRange();
+        range.selectNodeContents(e.currentTarget);
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+    }
 
     return (
       <div className="text-center flex flex-col items-center">
@@ -257,14 +257,13 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
                 priority
             />
         </div>
-        <button
-          onClick={handleCopy}
-          className="mt-4 bg-gray-800 hover:bg-gray-700 transition-colors px-4 py-2 rounded-md font-mono text-sm break-all max-w-sm w-full flex items-center justify-center gap-2"
+        <div
+          onClick={selectText}
+          className="mt-4 bg-gray-800 hover:bg-gray-700 transition-colors p-2 rounded-md font-mono text-sm break-all max-w-sm w-full cursor-pointer select-text"
         >
-          {isCopied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-          <span className="truncate">{isCopied ? "コピーしました！" : url}</span>
-        </button>
-        <p className="mt-4 text-xl max-w-md">スマートフォンでQRコードを読み取り、Discord認証を完了してください。</p>
+          {url}
+        </div>
+        <p className="mt-4 text-xl max-w-md">スマートフォンでQRコードを読み取るか、上記のURLを共有して登録を完了してください。</p>
         <QrTimer />
         <p className="text-sm text-gray-500 mt-4">※登録完了後、この画面は自動的に戻ります</p>
       </div>
@@ -345,5 +344,3 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
     </div>
   );
 }
-
-    

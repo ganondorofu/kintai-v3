@@ -18,7 +18,7 @@ export const dynamic = 'force-dynamic';
 async function RegisterForm({ token, teams }: { token: string, teams: any[] }) {
   const completeRegistrationWithToken = completeRegistration.bind(null, token);
 
-  const { data: { user } } = await createSupabaseServerClient();
+  const { data: { user } } = await createSupabaseServerClient().auth.getUser();
   
   if (!user) {
     return (
@@ -83,7 +83,8 @@ export default async function RegisterPage({ params }: { params: { token: string
         );
     }
   
-  const { data: { session } } = await createSupabaseServerClient();
+  const supabase = createSupabaseServerClient();
+  const { data: { session } } = await supabase.auth.getSession();
   
   const tempReg = await getTempRegistration(params.token);
 
@@ -108,7 +109,6 @@ export default async function RegisterPage({ params }: { params: { token: string
   
   const { data: teams } = await getAllTeams();
 
-  const supabase = createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   if(user) {
