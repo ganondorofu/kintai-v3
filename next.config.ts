@@ -37,8 +37,9 @@ const nextConfig: NextConfig = {
     ],
   },
   experimental: {
-    serverComponentsExternalPackages: ['@supabase/ssr'],
+    nodeMiddleware: true,
   },
+  serverExternalPackages: ['@supabase/ssr'],
 };
 
 export default nextConfig;
