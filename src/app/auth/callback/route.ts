@@ -45,17 +45,20 @@ export async function GET(request: Request) {
           } else {
              // Failed to fetch guilds
              await supabase.auth.signOut();
+             const errorBody = await response.json();
+             console.error('Failed to fetch Discord guilds:', errorBody);
              return NextResponse.redirect(`${origin}/login?error=Discordサーバーの情報を取得できませんでした。`);
           }
         } catch (e) {
           // Network or other errors
           await supabase.auth.signOut();
+          console.error('Error communicating with Discord:', e);
           return NextResponse.redirect(`${origin}/login?error=Discordとの通信中にエラーが発生しました。`);
         }
       } else {
         // No discord token available in session
          await supabase.auth.signOut();
-         return NextResponse.redirect(`${origin}/login?error=Discordの認証情報が見つかりませんでした。`);
+         return NextResponse.redirect(`${origin}/login?error=Discordの認証トークンが見つかりませんでした。権限スコープを確認してください。`);
       }
     }
   }
