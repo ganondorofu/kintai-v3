@@ -10,7 +10,7 @@ import Image from 'next/image';
 
 type KioskState = 'idle' | 'input' | 'success' | 'error' | 'register' | 'qr' | 'processing';
 type Announcement = Database['public']['Tables']['announcements']['Row'] | null;
-type Team = Database['public']['Tables']['teams']['Row'];
+type Team = Database['public']['Tables']['Row'];
 
 interface KioskContainerProps {
   initialAnnouncement: Announcement;
@@ -194,6 +194,42 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
        <p className="mt-4 text-xl">有効期限: あと{minutes}分{seconds.toString().padStart(2, '0')}秒</p>
     )
   }
+  
+  const IdleScreen = () => (
+    <div className="flex flex-col items-center justify-between h-full w-full py-8">
+        <div className="w-full flex justify-between items-center px-8 text-xl">
+            <h1 className="font-bold">STEM研究部 勤怠管理システム</h1>
+            {isOnline !== undefined && (
+            <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${isOnline ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
+                {isOnline ? <Wifi size={16}/> : <WifiOff size={16}/>}
+                <span>{isOnline ? 'オンライン' : 'オフライン'}</span>
+            </div>
+            )}
+        </div>
+
+        {announcement && (
+            <div className="w-full max-w-4xl p-6 bg-blue-500/10 border border-blue-400/30 rounded-lg text-center">
+            <h2 className="text-2xl font-bold mb-2 flex items-center justify-center gap-3">
+                <Bell className="text-blue-300" />
+                {announcement.title}
+            </h2>
+            <p className="text-lg text-gray-300 whitespace-pre-wrap">{announcement.content}</p>
+            </div>
+        )}
+
+        <Clock />
+        
+        <div className="text-center">
+            <p className="text-3xl font-semibold mb-4">NFCタグをタッチしてください</p>
+            <p className="text-gray-400">カードリーダーにタッチするか、IDをキーボードで入力してください</p>
+        </div>
+        
+        <div className="text-gray-500">
+            新しいカードを登録するには <span className="font-mono bg-gray-700 text-gray-300 px-2 py-1 rounded">/</span> キー
+        </div>
+    </div>
+  );
+
 
   const renderState = () => {
     switch (kioskState) {
@@ -249,56 +285,15 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
              </div>
          )
       case 'input':
-        const displayMessage = kioskState === 'register' ? '新規カード登録' : '入力中...';
-        return (
-            <div className="text-center flex flex-col items-center">
-                <p className="text-2xl text-gray-400 mb-4">{displayMessage}</p>
-                <p className="text-4xl font-mono bg-gray-800 px-4 py-2 rounded-lg">{inputValue}</p>
-                <p className="text-lg text-gray-500 mt-4">そのまま入力を続けてEnterを押してください</p>
-            </div>
-        )
       case 'idle':
       default:
-        return (
-          <div className="flex flex-col items-center justify-between h-full w-full py-8">
-            <div className="w-full flex justify-between items-center px-8 text-xl">
-              <h1 className="font-bold">STEM研究部 勤怠管理システム</h1>
-               {isOnline !== undefined && (
-                <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${isOnline ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
-                  {isOnline ? <Wifi size={16}/> : <WifiOff size={16}/>}
-                  <span>{isOnline ? 'オンライン' : 'オフライン'}</span>
-                </div>
-              )}
-            </div>
-
-            {announcement && (
-              <div className="w-full max-w-4xl p-6 bg-blue-500/10 border border-blue-400/30 rounded-lg text-center">
-                <h2 className="text-2xl font-bold mb-2 flex items-center justify-center gap-3">
-                  <Bell className="text-blue-300" />
-                  {announcement.title}
-                </h2>
-                <p className="text-lg text-gray-300 whitespace-pre-wrap">{announcement.content}</p>
-              </div>
-            )}
-
-            <Clock />
-            
-            <div className="text-center">
-              <p className="text-3xl font-semibold mb-4">NFCタグをタッチしてください</p>
-              <p className="text-gray-400">カードリーダーにタッチするか、IDをキーボードで入力してください</p>
-            </div>
-            
-            <div className="text-gray-500">
-                新しいカードを登録するには <span className="font-mono bg-gray-700 text-gray-300 px-2 py-1 rounded">/</span> キー
-            </div>
-          </div>
-        );
+        return <IdleScreen />;
     }
   };
 
   return (
-    <div className="w-full h-full bg-gray-900 text-white flex items-center justify-center">
-      <div className="w-[1024px] h-[768px] bg-gray-900 border-4 border-gray-700 rounded-lg p-8 shadow-2xl relative flex items-center justify-center" onClick={() => inputRef.current?.focus()}>
+    <div className="w-full h-full bg-gray-900 text-white flex items-center justify-center overflow-hidden">
+      <div className="w-[1024px] h-[768px] bg-gray-900 border-4 border-gray-700 rounded-lg shadow-2xl relative flex flex-col items-center justify-center" onClick={() => inputRef.current?.focus()}>
         <form onSubmit={handleFormSubmit}>
           <input
             ref={inputRef}
@@ -313,6 +308,15 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
         <div className="w-full h-full flex flex-col items-center justify-center">
           {renderState()}
         </div>
+        
+        {kioskState === 'input' && (
+          <div className="absolute bottom-0 left-0 right-0 p-4 bg-black/50 backdrop-blur-sm">
+            <div className="w-full max-w-4xl mx-auto text-center">
+              <p className="text-lg text-gray-400 mb-2">入力中...</p>
+              <p className="text-2xl font-mono bg-gray-800 px-4 py-2 rounded-lg inline-block">{inputValue}</p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
