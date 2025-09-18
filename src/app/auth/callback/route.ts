@@ -1,3 +1,4 @@
+'use server';
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import axios from 'axios';
 import { NextResponse } from 'next/server'
@@ -6,7 +7,6 @@ export async function GET(request: Request) {
   const origin = process.env.NEXT_PUBLIC_APP_URL!;
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
-  // if "next" is in param, use it as the redirect URL
   const next = searchParams.get('next') ?? '/dashboard'
 
   if (code) {
@@ -16,12 +16,16 @@ export async function GET(request: Request) {
     if (!error && data.session) {
       const discordToken = data.session.provider_token;
       const requiredServerId = process.env.DISCORD_SERVER_ID;
+      
+      console.log('--- Discord Auth Callback Debug ---');
 
       if (!requiredServerId) {
-        console.error('DISCORD_SERVER_ID is not set in environment variables.');
+        console.error('[DEBUG] DISCORD_SERVER_ID is not set in environment variables.');
         await supabase.auth.signOut();
-        return NextResponse.redirect(`${origin}/login?error=サーバーの設定に問題があります。`);
+        return NextResponse.redirect(`${origin}/login?error=サーバーの設定に問題があります。(管理者に連絡してください)`);
       }
+      console.log(`[DEBUG] Required Discord Server ID: ${requiredServerId}`);
+
 
       if (discordToken) {
         try {
@@ -32,32 +36,35 @@ export async function GET(request: Request) {
           });
           
           const guilds = response.data;
+          console.log('[DEBUG] Fetched guilds from Discord API:', JSON.stringify(guilds.map((g: any) => ({id: g.id, name: g.name})), null, 2));
+
           const isMember = guilds.some((guild: any) => guild.id === requiredServerId);
+          console.log(`[DEBUG] Is user a member of the required server? ${isMember}`);
 
           if (isMember) {
-            // User is a member, redirect to the intended page
+            console.log('[DEBUG] User is a member. Redirecting to dashboard...');
             return NextResponse.redirect(`${origin}${next}`);
           } else {
-            // User is not a member, sign out and redirect to login with an error
+            console.log('[DEBUG] User is NOT a member. Signing out and redirecting to login...');
             await supabase.auth.signOut();
             return NextResponse.redirect(`${origin}/login?error=指定されたDiscordサーバーのメンバーではありません。`);
           }
         } catch (e: any) {
-          // Network or other errors
+          console.error('[DEBUG] Error communicating with Discord API:', e.response?.data || e.message);
           await supabase.auth.signOut();
-          console.error('Error communicating with Discord:', e.response?.data || e.message);
           return NextResponse.redirect(`${origin}/login?error=Discordとの通信中にエラーが発生しました。`);
         }
       } else {
-        // No discord token available in session
+         console.error('[DEBUG] Discord provider_token not found in session.');
          await supabase.auth.signOut();
-         return NextResponse.redirect(`${origin}/login?error=Discordの認証トークンが見つかりませんでした。権限スコープを確認してください。`);
+         return NextResponse.redirect(`${origin}/login?error=Discordの認証トークンが見つかりませんでした。権限スコープを再確認してください。`);
       }
     } else {
-      console.error('Code exchange error:', error?.message);
+      console.error('[DEBUG] Supabase code exchange error:', error?.message);
     }
   }
 
   // Fallback for any other error cases
+  console.log('[DEBUG] Fallback: Redirecting to login with generic error.');
   return NextResponse.redirect(`${origin}/login?error=ユーザーを認証できませんでした。`)
 }
