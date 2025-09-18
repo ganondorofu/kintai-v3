@@ -36,9 +36,7 @@ const nextConfig: NextConfig = {
       }
     ],
   },
-  experimental: {
-    nodeMiddleware: true,
-  },
+  experimental: {},
   serverExternalPackages: ['@supabase/ssr'],
 };
 
