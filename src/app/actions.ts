@@ -395,3 +395,16 @@ export async function getAllDailyLogoutLogs() {
         .select('*')
         .order('executed_at', { ascending: false });
 }
+
+export async function getTempRegistrations() {
+    const supabase = createSupabaseAdminClient();
+    return supabase.from('temp_registrations').select('*').order('created_at', { ascending: false });
+}
+
+export async function deleteTempRegistration(id: string) {
+    const supabase = createSupabaseAdminClient();
+    const { error } = await supabase.from('temp_registrations').delete().eq('id', id);
+    if(error) return { success: false, message: error.message };
+    revalidatePath('/admin');
+    return { success: true, message: '仮登録を削除しました。' };
+}

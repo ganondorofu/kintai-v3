@@ -5,9 +5,10 @@ import AnnouncementsTab from "./_components/AnnouncementsTab";
 import LogsTab from "./_components/LogsTab";
 import TeamsTab from "./_components/TeamsTab";
 import SystemTab from "./_components/SystemTab";
-import { getAllUsers, getAllTeams, getAllAnnouncements, getAllUserEditLogs, getAllDailyLogoutLogs } from "../actions";
-import { User, Annoyed, History, AlertCircle, Users2, Power } from "lucide-react";
+import { getAllUsers, getAllTeams, getAllAnnouncements, getAllUserEditLogs, getAllDailyLogoutLogs, getTempRegistrations } from "../actions";
+import { User, Annoyed, History, AlertCircle, Users2, Power, FilePenLine } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import TempRegistrationsTab from "./_components/TempRegistrationsTab";
 
 export const dynamic = 'force-dynamic';
 
@@ -21,12 +22,14 @@ export default async function AdminPage() {
     announcementsResult,
     userEditLogsResult,
     dailyLogoutLogsResult,
+    tempRegistrationsResult,
   ] = await Promise.all([
     getAllUsers(),
     getAllTeams(),
     getAllAnnouncements(),
     getAllUserEditLogs(),
     getAllDailyLogoutLogs(),
+    getTempRegistrations(),
   ]);
 
   const { data: users, error: usersError } = usersResult;
@@ -34,8 +37,10 @@ export default async function AdminPage() {
   const { data: announcements, error: announcementsError } = announcementsResult;
   const { data: userEditLogs, error: userEditLogsError } = userEditLogsResult;
   const { data: dailyLogoutLogs, error: dailyLogoutLogsError } = dailyLogoutLogsResult;
+  const { data: tempRegistrations, error: tempRegistrationsError } = tempRegistrationsResult;
 
-  const errors = [usersError, teamsError, announcementsError, userEditLogsError, dailyLogoutLogsError].filter(Boolean);
+
+  const errors = [usersError, teamsError, announcementsError, userEditLogsError, dailyLogoutLogsError, tempRegistrationsError].filter(Boolean);
 
   return (
     <div className="space-y-6">
@@ -57,7 +62,7 @@ export default async function AdminPage() {
       )}
 
       <Tabs defaultValue="users">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="users">
             <User className="mr-2 h-4 w-4" />
             ユーザー管理
@@ -65,6 +70,10 @@ export default async function AdminPage() {
           <TabsTrigger value="teams">
             <Users2 className="mr-2 h-4 w-4" />
             班管理
+          </TabsTrigger>
+           <TabsTrigger value="temp_registrations">
+            <FilePenLine className="mr-2 h-4 w-4" />
+            仮登録管理
           </TabsTrigger>
           <TabsTrigger value="announcements">
             <Annoyed className="mr-2 h-4 w-4" />
@@ -88,6 +97,9 @@ export default async function AdminPage() {
         </TabsContent>
         <TabsContent value="teams">
           <TeamsTab teams={teams || []} />
+        </TabsContent>
+         <TabsContent value="temp_registrations">
+            <TempRegistrationsTab tempRegistrations={tempRegistrations || []} />
         </TabsContent>
         <TabsContent value="announcements">
           <AnnouncementsTab 
