@@ -44,7 +44,6 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
     inputRef.current?.focus();
   }, []);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
     // Focus input on idle state
     if (kioskState === 'idle' || kioskState === 'error') {
@@ -277,7 +276,10 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
                     priority
                 />
             </div>
-            <div className='mt-4 bg-gray-800 px-3 py-2 rounded-md font-mono text-sm break-all max-w-sm'>
+            <div 
+              className='mt-4 bg-gray-800 px-3 py-2 rounded-md font-mono text-sm break-all max-w-sm cursor-text select-text'
+              onClick={(e) => e.stopPropagation()}
+            >
               {url}
             </div>
             <p className="mt-4 text-xl max-w-md">スマートフォンでQRコードを読み取り、Discord認証を完了してください。</p>
