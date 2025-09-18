@@ -86,7 +86,7 @@ export async function getTempRegistration(token: string) {
     // Mark as accessed
     if (!data.accessed_at) {
         const admin = createSupabaseAdminClient();
-        await admin.from('temp_registrations').update({ accessed_at: new Date().toISOString() }).eq('id', data.id);
+        await admin.from('temp_registregistrations').update({ accessed_at: new Date().toISOString() }).eq('id', data.id);
     }
 
     return data;
@@ -285,3 +285,5 @@ export async function getAllDailyLogoutLogs() {
         .select('*')
         .order('executed_at', { ascending: false });
 }
+
+    
