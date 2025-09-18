@@ -53,10 +53,11 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
     
     setKioskState('processing');
 
-    const currentKioskState = kioskState; // Use the state at the moment of submission
+    // Make a local copy of kioskState to avoid race conditions
+    const stateAtSubmission = kioskState;
     setInputValue(''); 
 
-    if (currentKioskState === 'register') {
+    if (stateAtSubmission === 'register') {
       const result = await createTempRegistration(cardId);
       if (result.success && result.token) {
         setQrToken(result.token);
@@ -67,7 +68,7 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
         setMessage(result.message);
         setSubMessage('');
       }
-    } else {
+    } else { // This includes 'idle', 'input', and 'success' states
       const result = await recordAttendance(cardId);
       if (result.success && result.user) {
         setKioskState('success');
@@ -89,8 +90,6 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
     if (kioskState === 'success' || kioskState === 'error') {
       if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
       resetTimerRef.current = setTimeout(resetToIdle, AUTO_RESET_DELAY);
-    } else if (kioskState !== 'idle' && kioskState !== 'qr') {
-       if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
     }
     
     return () => {
@@ -101,12 +100,14 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
   
    useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+       // Allow continuous input even in success state
       if (kioskState === 'processing' || (kioskState === 'qr' && e.key !== 'Escape')) {
         return;
       }
 
-      // Allow Escape key to reset from QR screen
+      // Allow Escape key to reset from any state
       if (e.key === 'Escape') {
+        if(resetTimerRef.current) clearTimeout(resetTimerRef.current);
         resetToIdle();
         return;
       }
@@ -119,9 +120,7 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
       }
       
       if (e.key === '/') {
-         if (kioskState === 'success' || kioskState === 'error') {
-            if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
-         }
+         if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
         e.preventDefault();
         setKioskState('register');
         setMessage('新規カード登録');
@@ -133,7 +132,7 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
       // Allow alphanumeric and some symbols for card IDs
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
         setInputValue(prev => prev + e.key);
-        if (kioskState !== 'register' && kioskState !== 'success') {
+        if (kioskState === 'idle' || kioskState === 'success') {
            setKioskState('input');
         }
       }
@@ -167,6 +166,7 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
           },
           (payload) => {
             if ((payload.new.accessed_at || payload.new.is_used) && kioskState === 'qr') {
+              if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
               resetToIdle();
             }
           }
@@ -188,7 +188,7 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
       window.removeEventListener('online', updateOnlineStatus);
       window.removeEventListener('offline', updateOnlineStatus);
       if (qrChannel) supabase.removeChannel(qrChannel);
-      supabase.removeChannel(announcementChannel);
+      if (announcementChannel) supabase.removeChannel(announcementChannel);
     };
   }, [supabase, qrToken, kioskState, resetToIdle]);
   
