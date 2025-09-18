@@ -50,4 +50,4 @@ Open [http://localhost:9002](http://localhost:9002) with your browser to see the
 *   **QR Code Registration:** A seamless flow for new users to register via their smartphones.
 *   **Discord Integration:** Secure authentication using Discord OAuth.
 *   **Admin & User Dashboards:** Interfaces for managing users and viewing attendance data.
-*   **AI Anomaly Detection:** Flags unusual attendance patterns automatically.
+
