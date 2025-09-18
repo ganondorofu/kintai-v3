@@ -61,6 +61,28 @@ async function RegisterForm({ token, teams }: { token: string, teams: any[] }) {
 }
 
 export default async function RegisterPage({ params }: { params: { token: string } }) {
+    if (params.token === 'unregistered') {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4">
+                <Card className="w-full max-w-md">
+                    <CardHeader className="items-center text-center">
+                        <Icons.UserPlus className="w-16 h-16 text-destructive mb-4" />
+                        <CardTitle className="text-2xl">カードが未登録です</CardTitle>
+                        <CardDescription>
+                            ダッシュボードにアクセスするには、まずカードを登録する必要があります。
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="text-center space-y-4">
+                        <p className="text-muted-foreground">お手数ですが、Kiosk端末でQRコードをスキャンして登録を完了してください。</p>
+                        <Button asChild variant="outline">
+                            <Link href="/login">ログインページに戻る</Link>
+                        </Button>
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    }
+  
   const { data: { session } } = await createSupabaseServerClient();
   
   const tempReg = await getTempRegistration(params.token);
