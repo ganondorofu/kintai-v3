@@ -158,7 +158,7 @@ export async function signInWithDiscord() {
         provider: 'discord',
         options: {
             redirectTo: `${origin}/auth/callback`,
-            scopes: 'guilds',
+            scopes: 'identify guilds',
         },
     });
 
