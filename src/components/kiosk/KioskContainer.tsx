@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
@@ -10,7 +11,7 @@ import Image from 'next/image';
 
 type KioskState = 'idle' | 'input' | 'success' | 'error' | 'register' | 'qr' | 'processing';
 type Announcement = Database['public']['Tables']['announcements']['Row'] | null;
-type Team = Database['public']['Tables']['Row'];
+type Team = Database['public']['Tables']['teams']['Row'];
 
 interface KioskContainerProps {
   initialAnnouncement: Announcement;
@@ -191,7 +192,7 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
     const seconds = Math.floor((remaining % 60000) / 1000);
 
     return (
-       <p className="mt-4 text-xl">有効期限: あと{minutes}分{seconds.toString().padStart(2, '0')}秒</p>
+       <p className="mt-2 text-lg">有効期限: あと{minutes}分{seconds.toString().padStart(2, '0')}秒</p>
     )
   }
   
@@ -261,19 +262,23 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
           </div>
         );
       case 'qr':
+        const url = `${process.env.NEXT_PUBLIC_APP_URL}/register/${qrToken}`;
         return (
           <div className="text-center flex flex-col items-center">
-            <p className="text-4xl font-bold mb-6">QRコード登録</p>
+            <p className="text-4xl font-bold mb-4">QRコード登録</p>
             <div className="bg-white p-4 rounded-lg">
                 <Image
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=${process.env.NEXT_PUBLIC_APP_URL}/register/${qrToken}`}
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=${url}`}
                     width={256}
                     height={256}
                     alt="QR Code"
                     data-ai-hint="qr code"
                 />
             </div>
-            <p className="mt-6 text-xl max-w-md">スマートフォンでQRコードを読み取り、Discord認証を完了してください。</p>
+            <div className='mt-3 bg-gray-800 px-3 py-2 rounded-md font-mono text-sm break-all max-w-sm'>
+              {url}
+            </div>
+            <p className="mt-4 text-xl max-w-md">スマートフォンでQRコードを読み取り、Discord認証を完了してください。</p>
             <QrTimer />
             <p className="text-sm text-gray-500 mt-4">※登録完了後、この画面は自動的に戻ります</p>
           </div>
@@ -321,3 +326,5 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
     </div>
   );
 }
+
+    
