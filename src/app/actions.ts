@@ -86,7 +86,7 @@ export async function getTempRegistration(token: string) {
     // Mark as accessed
     if (!data.accessed_at) {
         const admin = createSupabaseAdminClient();
-        await admin.from('temp_registregistrations').update({ accessed_at: new Date().toISOString() }).eq('id', data.id);
+        await admin.from('temp_registrations').update({ accessed_at: new Date().toISOString() }).eq('id', data.id);
     }
 
     return data;
@@ -152,13 +152,14 @@ export async function completeRegistration(
 
 export async function signInWithDiscord() {
     const supabase = createSupabaseServerClient();
-    const origin = process.env.NEXT_PUBLIC_APP_URL;
-
     const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'discord',
         options: {
-            redirectTo: `${origin}/auth/callback`,
+            redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
             scopes: 'identify guilds',
+            queryParams: {
+                prompt: 'consent',
+            },
         },
     });
 
@@ -286,5 +287,3 @@ export async function getAllDailyLogoutLogs() {
         .select('*')
         .order('executed_at', { ascending: false });
 }
-
-    
