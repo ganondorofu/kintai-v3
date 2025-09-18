@@ -262,20 +262,22 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
           </div>
         );
       case 'qr':
+        if (!qrToken) return null;
         const url = `${process.env.NEXT_PUBLIC_APP_URL}/register/${qrToken}`;
         return (
           <div className="text-center flex flex-col items-center">
             <p className="text-4xl font-bold mb-4">QRコード登録</p>
             <div className="bg-white p-4 rounded-lg">
                 <Image
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=${url}`}
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=${encodeURIComponent(url)}`}
                     width={256}
                     height={256}
                     alt="QR Code"
                     data-ai-hint="qr code"
+                    priority
                 />
             </div>
-            <div className='mt-3 bg-gray-800 px-3 py-2 rounded-md font-mono text-sm break-all max-w-sm'>
+            <div className='mt-4 bg-gray-800 px-3 py-2 rounded-md font-mono text-sm break-all max-w-sm'>
               {url}
             </div>
             <p className="mt-4 text-xl max-w-md">スマートフォンでQRコードを読み取り、Discord認証を完了してください。</p>
