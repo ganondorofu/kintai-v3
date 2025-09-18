@@ -27,7 +27,7 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
   const [qrToken, setQrToken] = useState<string | null>(null);
   const [qrExpiry, setQrExpiry] = useState<number>(0);
   const [announcement, setAnnouncement] = useState(initialAnnouncement);
-  const [isOnline, setIsOnline] = useState(true);
+  const [isOnline, setIsOnline] = useState<boolean | undefined>(undefined);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const resetTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -90,7 +90,7 @@ export default function KioskContainer({ initialAnnouncement, teams }: KioskCont
   }, [kioskState, resetToIdle]);
   
   useEffect(() => {
-    const updateOnlineStatus = () => setIsOnline(typeof navigator !== 'undefined' && navigator.onLine);
+    const updateOnlineStatus = () => setIsOnline(navigator.onLine);
     window.addEventListener('online', updateOnlineStatus);
     window.addEventListener('offline', updateOnlineStatus);
     updateOnlineStatus();
