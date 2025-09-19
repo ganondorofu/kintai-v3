@@ -161,7 +161,6 @@ export default function AdminAttendanceCalendar() {
         disabled={isLoading}
         className="rounded-md border"
         classNames={{
-            day: "h-14 w-14",
             day_selected: "bg-primary/20 text-primary-foreground font-bold border border-primary",
         }}
         showOutsideDays

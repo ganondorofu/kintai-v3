@@ -80,9 +80,6 @@ export default function AttendanceCalendar({ userId }: { userId: string }) {
         onMonthChange={handleMonthChange}
         disabled={isLoading}
         className="rounded-md border"
-        classNames={{
-            day: "h-14 w-14",
-        }}
         showOutsideDays
         components={{
           Caption: () => null,
