@@ -5,7 +5,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { getMonthlyAttendanceSummary } from '@/app/actions';
 import { format, startOfMonth } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Users, RefreshCcw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RefreshCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -124,8 +124,7 @@ export default function AdminAttendanceCalendar() {
             <div>{day.getDate()}</div>
             {total && total > 0 ? (
                 <div className="attendance-count">
-                    <Users className="h-3 w-3" />
-                    {total}
+                    {total}人
                 </div>
             ) : <div className='attendance-count'>&nbsp;</div>}
         </>
