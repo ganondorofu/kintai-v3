@@ -269,15 +269,82 @@ export async function calculateTotalActivityTime(userId: string): Promise<number
 }
 
 // Admin actions
-export async function getAllUsers() {
+export async function getAllUsersWithStatus() {
     const supabase = createSupabaseAdminClient();
-    return supabase.from('users').select('*, teams(id, name)');
+    const { data: users, error: usersError } = await supabase.from('users').select('*, teams(id, name)');
+    if (usersError) return { data: [], error: usersError };
+
+    const userIds = users.map(u => u.id);
+    const { data: latestAttendances, error: attendanceError } = await supabase
+        .from('attendances')
+        .select('user_id, type')
+        .in('user_id', userIds)
+        .order('timestamp', { ascending: false });
+    
+    if (attendanceError) return { data: users, error: null }; // Return users without status on error
+
+    const statusMap = new Map<string, string>();
+    latestAttendances.forEach(att => {
+        if (!statusMap.has(att.user_id)) {
+            statusMap.set(att.user_id, att.type);
+        }
+    });
+
+    const usersWithStatus = users.map(u => ({
+        ...u,
+        status: statusMap.get(u.id) || 'out'
+    }));
+    
+    return { data: usersWithStatus, error: null };
 }
 
 export async function getAllTeams() {
     const supabase = createSupabaseAdminClient();
     return supabase.from('teams').select('*').order('name');
 }
+
+export async function getTeamsWithMemberStatus() {
+    const supabase = createSupabaseAdminClient();
+    const { data: teams, error: teamsError } = await supabase.from('teams').select('id, name').order('name');
+    if (teamsError) return [];
+
+    const { data: users, error: usersError } = await supabase.from('users').select('id, team_id');
+    if (usersError) return teams.map(t => ({ ...t, current: 0, total: 0 }));
+    
+    const userIds = users.map(u => u.id);
+     const { data: latestAttendances, error: attendanceError } = await supabase
+        .from('attendances')
+        .select('user_id, type')
+        .in('user_id', userIds)
+        .order('timestamp', { ascending: false });
+
+    const statusMap = new Map<string, string>();
+    if (latestAttendances) {
+        latestAttendances.forEach(att => {
+            if (!statusMap.has(att.user_id)) {
+                statusMap.set(att.user_id, att.type);
+            }
+        });
+    }
+
+    const memberStatusByTeam = users.reduce((acc, user) => {
+        if (!user.team_id) return acc;
+        if (!acc[user.team_id]) {
+            acc[user.team_id] = { current: 0, total: 0 };
+        }
+        acc[user.team_id].total++;
+        if (statusMap.get(user.id) === 'in') {
+            acc[user.team_id].current++;
+        }
+        return acc;
+    }, {} as Record<number, { current: number; total: number }>);
+
+    return teams.map(team => ({
+        ...team,
+        ...memberStatusByTeam[team.id] || { current: 0, total: 0 },
+    }));
+}
+
 
 export async function updateUser(userId: string, data: TablesUpdate<'users'>) {
     const supabase = createSupabaseAdminClient();
@@ -397,6 +464,7 @@ export async function forceToggleAttendance(userId: string) {
 
     revalidatePath('/admin');
     revalidatePath('/dashboard/teams', 'page');
+    revalidatePath('/dashboard/layout');
     return { success: true, message: `ユーザーを強制的に${newType === 'in' ? '出勤' : '退勤'}させました。` };
 }
 
@@ -541,7 +609,7 @@ export async function getMonthlyTeamAttendanceStats(teamId: number, days: number
     }, {} as Record<string, Set<string>>);
     
     const dailyRates = Object.values(dailyAttendanceCount).map(users => (users.size / memberIds.length) * 100);
-    const averageRate = dailyRates.reduce((sum, rate) => sum + rate, 0) / totalActivityDays;
+    const averageRate = dailyRates.length > 0 ? dailyRates.reduce((sum, rate) => sum + rate, 0) / dailyRates.length : 0;
 
     return averageRate;
 }
