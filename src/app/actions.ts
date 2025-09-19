@@ -195,6 +195,84 @@ export async function signInWithDiscord() {
     }
 }
 
+export async function signInAsAnonymousAdmin() {
+    const adminSupabase = createSupabaseAdminClient();
+    const supabase = createSupabaseServerClient();
+    const email = 'admin@example.com';
+    const password = 'password';
+
+    // 1. Check if the user already exists in auth.users
+    const { data: { users }, error: listUsersError } = await adminSupabase.auth.admin.listUsers();
+    if (listUsersError) {
+        console.error('Error listing users:', listUsersError);
+        return redirect('/login?error=Failed to list users.');
+    }
+
+    let authUser = users.find(u => u.email === email);
+
+    if (!authUser) {
+        // 2. If not, create the auth user
+        const { data: newAuthUser, error: createAuthUserError } = await adminSupabase.auth.admin.createUser({
+            email,
+            password,
+            email_confirm: true,
+        });
+
+        if (createAuthUserError) {
+            console.error('Error creating anonymous admin auth user:', createAuthUserError);
+            return redirect(`/login?error=${createAuthUserError.message}`);
+        }
+        authUser = newAuthUser.user;
+    }
+    
+    if (!authUser) {
+         return redirect('/login?error=Could not create or find anonymous admin user.');
+    }
+
+    // 3. Check if the user exists in public.users
+    const { data: profile, error: profileError } = await adminSupabase
+        .from('users')
+        .select('id')
+        .eq('id', authUser.id)
+        .single();
+    
+    if (profileError && profileError.code !== 'PGRST116') {
+        console.error('Error checking for profile:', profileError);
+        return redirect('/login?error=Failed to check for user profile.');
+    }
+
+    if (!profile) {
+        // 4. If not, create the public.users profile
+        const { error: createProfileError } = await adminSupabase.from('users').insert({
+            id: authUser.id,
+            display_name: '匿名管理者',
+            discord_id: 'anonymous_admin',
+            card_id: `admin_${randomUUID().slice(0,8)}`,
+            generation: 0,
+            role: 1, // Admin role
+        });
+
+        if (createProfileError) {
+            console.error('Error creating anonymous admin profile:', createProfileError);
+            return redirect(`/login?error=${createProfileError.message}`);
+        }
+    }
+
+    // 5. Sign in the user
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+    });
+
+    if (signInError) {
+        console.error('Sign in error:', signInError);
+        return redirect(`/login?error=${signInError.message}`);
+    }
+
+    revalidatePath('/', 'layout');
+    redirect('/dashboard');
+}
+
 
 export async function signOut() {
     cookies().getAll();
