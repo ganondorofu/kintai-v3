@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Calendar } from '@/components/ui/calendar';
 import { getMonthlyAttendanceSummary } from '@/app/actions';
 import { format, startOfMonth } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Users, RefreshCcw, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Users, RefreshCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -17,7 +17,14 @@ type DailySummary = {
 type AttendanceSummary = Record<string, DailySummary>;
 
 function TeamBreakdown({ date, summary }: { date: Date; summary: DailySummary }) {
-    const sortedTeams = Object.values(summary.byTeam).sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+    const sortedTeams = useMemo(() => {
+        if (!summary || !summary.byTeam) return [];
+        return Object.values(summary.byTeam).sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+    }, [summary]);
+
+    if (!summary) {
+        return null;
+    }
 
     return (
         <Card className="mt-4">
@@ -80,12 +87,11 @@ export default function AdminAttendanceCalendar() {
     setSelectedDay(undefined);
   };
   
-  const handleDayClick = (day: Date, modifiers: any) => {
-    if (modifiers.disabled) return;
+  const handleDayClick = (day: Date) => {
     const dateKey = format(day, 'yyyy-MM-dd');
     if (summary && summary[dateKey] && summary[dateKey].total > 0) {
         if (selectedDay && format(selectedDay, 'yyyy-MM-dd') === dateKey) {
-            setSelectedDay(undefined); // Toggle off if same day is clicked
+            setSelectedDay(undefined);
         } else {
             setSelectedDay(day);
         }
@@ -153,8 +159,8 @@ export default function AdminAttendanceCalendar() {
         classNames={{
             day_selected: "bg-primary/20 text-primary-foreground font-bold border border-primary",
             months: "p-3",
-            day: "h-20 w-full p-0 text-center text-sm focus-within:relative focus-within:z-20",
             cell: "p-0",
+            day: "h-20 w-full p-0 text-center text-sm",
         }}
         showOutsideDays
         components={{
