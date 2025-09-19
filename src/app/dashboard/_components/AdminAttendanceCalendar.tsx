@@ -122,14 +122,12 @@ export default function AdminAttendanceCalendar() {
     return (
         <>
             <div>{day.getDate()}</div>
-            <div className="attendance-count">
-                {total && total > 0 ? (
-                    <>
-                        <Users className="h-3 w-3" />
-                        {total}
-                    </>
-                ) : <>&nbsp;</>}
-            </div>
+            {total && total > 0 ? (
+                <div className="attendance-count">
+                    <Users className="h-3 w-3" />
+                    {total}
+                </div>
+            ) : <div className="attendance-count">&nbsp;</div>}
         </>
     );
   };
