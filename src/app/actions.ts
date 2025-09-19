@@ -634,7 +634,7 @@ export async function getTeamWithMembersStatus(teamId: number) {
     // 2. Fetch team details
     const { data: team, error: teamError } = await supabase.from('teams').select('*').eq('id', teamId).single();
 
-    if(teamError || !team) return { team: null, members: [], stats: null };
+    if(teamError || !team) return { team: null, members: [], stats: null, error: teamError?.message || 'Team not found' };
 
     // 3. Fetch all members of the team
     const { data: membersData, error: membersError } = await supabase
@@ -646,14 +646,19 @@ export async function getTeamWithMembersStatus(teamId: number) {
 
     if (membersError) {
         console.error("Error fetching team members:", membersError);
-        return { team, members: [], stats: null };
+        return { team, members: [], stats: null, error: membersError.message };
     }
 
     const memberIds = membersData.map(m => m.id);
 
     // 4. Fetch the latest attendance for each member
+    // Using a more robust query instead of RPC
     const { data: latestAttendances, error: attendanceError } = await supabase
-        .rpc('get_latest_attendance_for_users', { user_ids: memberIds });
+        .from('attendances')
+        .select('user_id, type, timestamp')
+        .in('user_id', memberIds)
+        .order('timestamp', { ascending: false });
+
 
     if (attendanceError) {
         console.error("Error fetching latest attendance:", attendanceError);
@@ -663,7 +668,9 @@ export async function getTeamWithMembersStatus(teamId: number) {
     const statusMap = new Map<string, { type: 'in' | 'out', timestamp: string }>();
     if (latestAttendances) {
         for (const att of latestAttendances) {
-            statusMap.set(att.user_id, { type: att.type, timestamp: att.timestamp });
+            if (!statusMap.has(att.user_id)) { // Only set the latest one
+                statusMap.set(att.user_id, { type: att.type as 'in' | 'out', timestamp: att.timestamp });
+            }
         }
     }
     
@@ -832,3 +839,5 @@ export async function deleteTempRegistration(id: string) {
     revalidatePath('/admin');
     return { success: true, message: '仮登録を削除しました。' };
 }
+
+    

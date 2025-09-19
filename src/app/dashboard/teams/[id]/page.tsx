@@ -35,6 +35,7 @@ export default async function TeamStatusPage({ params }: { params: { id: string 
                 <AlertTitle>エラー</AlertTitle>
                 <AlertDescription>
                     指定された班が見つかりません。
+                     <Button variant="link" asChild><Link href="/dashboard">ダッシュボードに戻る</Link></Button>
                 </AlertDescription>
             </Alert>
         )
@@ -131,3 +132,5 @@ export default async function TeamStatusPage({ params }: { params: { id: string 
         </div>
     )
 }
+
+    
