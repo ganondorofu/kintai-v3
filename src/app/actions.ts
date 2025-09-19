@@ -12,11 +12,13 @@ type UserWithTeam = Tables<'users'> & { teams: Tables<'teams'> | null };
 
 export async function recordAttendance(cardId: string): Promise<{ success: boolean; message: string; user: UserWithTeam | null; type: 'in' | 'out' | null; anomalyReason?: string }> {
   const supabase = createSupabaseAdminClient();
+  
+  const normalizedCardId = cardId.replace(/:/g, '').toLowerCase();
 
   const { data: user, error: userError } = await supabase
     .from('users')
     .select('*, teams (id, name)')
-    .eq('card_id', cardId)
+    .eq('card_id', normalizedCardId)
     .single();
 
   if (userError || !user) {
@@ -59,11 +61,12 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
 
 export async function createTempRegistration(cardId: string): Promise<{ success: boolean; token?: string; message: string }> {
   const supabase = createSupabaseAdminClient();
+  const normalizedCardId = cardId.replace(/:/g, '').toLowerCase();
   
   const { data: existingUser, error: existingUserError } = await supabase
     .from('users')
     .select('id')
-    .eq('card_id', cardId);
+    .eq('card_id', normalizedCardId);
 
   if (existingUserError) {
     console.error("Error checking for existing user:", existingUserError);
@@ -78,7 +81,7 @@ export async function createTempRegistration(cardId: string): Promise<{ success:
   const expires_at = new Date(Date.now() + 30 * 60 * 1000).toISOString();
   
   const { error } = await supabase.from('temp_registrations').upsert(
-    { card_id: cardId, qr_token: token, expires_at: expires_at, is_used: false },
+    { card_id: normalizedCardId, qr_token: token, expires_at: expires_at, is_used: false },
     { onConflict: 'card_id', ignoreDuplicates: false }
   );
   
@@ -489,6 +492,11 @@ export async function getTeamsWithMemberStatus() {
 
 export async function updateUser(userId: string, data: TablesUpdate<'users'>) {
     const supabase = createSupabaseAdminClient();
+    
+    if (data.card_id) {
+        data.card_id = data.card_id.replace(/:/g, '').toLowerCase();
+    }
+
     const { error } = await supabase.from('users').update(data).eq('id', userId);
     if(error) return { success: false, message: error.message };
     revalidatePath('/admin');
