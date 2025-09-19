@@ -6,7 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { randomUUID } from 'crypto';
-import { differenceInSeconds, startOfDay, endOfDay, subDays, format } from 'date-fns';
+import { differenceInSeconds, startOfDay, endOfDay, subDays, format, startOfMonth, endOfMonth } from 'date-fns';
 
 type UserWithTeam = Tables<'users'> & { teams: Tables<'teams'> | null };
 
@@ -206,17 +206,15 @@ export async function signOut() {
 
 export async function getMonthlyAttendance(userId: string, month: Date) {
   const supabase = createSupabaseServerClient();
-  const { startOfMonth, endOfMonth } = {
-    startOfMonth: new Date(month.getFullYear(), month.getMonth(), 1),
-    endOfMonth: new Date(month.getFullYear(), month.getMonth() + 1, 0)
-  };
+  const start = startOfMonth(month);
+  const end = endOfMonth(month);
   
   const { data, error } = await supabase
     .from('attendances')
     .select('date, type')
     .eq('user_id', userId)
-    .gte('date', startOfMonth.toISOString().split('T')[0])
-    .lte('date', endOfMonth.toISOString().split('T')[0])
+    .gte('date', format(start, 'yyyy-MM-dd'))
+    .lte('date', format(end, 'yyyy-MM-dd'))
     .order('timestamp', { ascending: true });
 
   if (error) {
@@ -235,6 +233,79 @@ export async function getMonthlyAttendance(userId: string, month: Date) {
     status: dailyStatus[date]
   }));
 }
+
+export async function getMonthlyAttendanceSummary(month: Date) {
+  const supabase = createSupabaseAdminClient();
+  const start = startOfMonth(month);
+  const end = endOfMonth(month);
+
+  const { data, error } = await supabase
+    .from('attendances')
+    .select('date, users (generation)')
+    .eq('type', 'in')
+    .gte('date', format(start, 'yyyy-MM-dd'))
+    .lte('date', format(end, 'yyyy-MM-dd'));
+
+  if (error) {
+    console.error('Error fetching monthly attendance summary:', error);
+    return {};
+  }
+  
+  const summary: Record<string, { total: number; byGeneration: Record<number, number> }> = {};
+
+  for (const record of data) {
+    const { date, users } = record;
+    if (!date || !users) continue;
+    
+    if (!summary[date]) {
+      summary[date] = { total: 0, byGeneration: {} };
+    }
+    
+    // This logic assumes one 'in' record per user per day for counting.
+    // If a user can have multiple 'in' records a day, we need to count unique users.
+    // Let's refine this to count unique users per day.
+  }
+
+  // To count unique users, we need to process the data differently
+  const dailyUsers: Record<string, Map<string, number>> = {};
+  const { data: uniqueData, error: uniqueError } = await supabase
+    .from('attendances')
+    .select('date, user_id, users(generation)')
+    .eq('type', 'in')
+    .gte('date', format(start, 'yyyy-MM-dd'))
+    .lte('date', format(end, 'yyyy-MM-dd'));
+
+  if (uniqueError) {
+    console.error('Error fetching monthly unique attendance summary:', uniqueError);
+    return {};
+  }
+
+  if (uniqueData) {
+    for (const record of uniqueData) {
+        const { date, user_id, users } = record;
+        if (!date || !user_id || !users) continue;
+
+        if (!dailyUsers[date]) {
+            dailyUsers[date] = new Map();
+        }
+        if (!dailyUsers[date].has(user_id)) {
+            dailyUsers[date].set(user_id, users.generation);
+        }
+    }
+  }
+
+
+  Object.keys(dailyUsers).forEach(date => {
+      const usersMap = dailyUsers[date];
+      summary[date] = { total: usersMap.size, byGeneration: {} };
+      usersMap.forEach((generation) => {
+          summary[date].byGeneration[generation] = (summary[date].byGeneration[generation] || 0) + 1;
+      });
+  });
+  
+  return summary;
+}
+
 
 export async function calculateTotalActivityTime(userId: string): Promise<number> {
   const supabase = createSupabaseServerClient();
