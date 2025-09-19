@@ -1,3 +1,4 @@
+
 'use server';
 
 import { createSupabaseAdminClient, createSupabaseServerClient } from '@/lib/supabase/server';
@@ -7,6 +8,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { randomUUID } from 'crypto';
 import { differenceInSeconds, startOfDay, endOfDay, subDays, format, startOfMonth, endOfMonth } from 'date-fns';
+import { flagAnomalousActivity } from '@/ai/flows/flag-anomalous-activity';
 
 type UserWithTeam = Tables<'users'> & { teams: Tables<'teams'> | null };
 
@@ -40,21 +42,53 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
 
   const attendanceType = lastAttendance?.type === 'in' ? 'out' : 'in';
 
-  const { error: insertError } = await supabase
+  const { data: insertedData, error: insertError } = await supabase
     .from('attendances')
-    .insert({ user_id: user.id, type: attendanceType });
+    .insert({ user_id: user.id, type: attendanceType })
+    .select('timestamp')
+    .single();
 
-  if (insertError) {
+  if (insertError || !insertedData) {
     console.error('Attendance insert error:', insertError);
     return { success: false, message: '打刻処理中にエラーが発生しました。', user, type: null };
   }
   
+  // AI Anomaly Detection
+  let anomalyReason: string | undefined;
+  try {
+    const { data: recentActivity, error: activityError } = await supabase
+      .from('attendances')
+      .select('type, timestamp')
+      .eq('user_id', user.id)
+      .order('timestamp', { ascending: false })
+      .limit(10);
+
+    if (activityError) {
+      console.error('AI Anomaly Detection - Error fetching recent activity:', activityError);
+    } else {
+      const result = await flagAnomalousActivity({
+        userId: user.id,
+        activityType: attendanceType,
+        timestamp: insertedData.timestamp,
+        recentActivity: (recentActivity || []).map(a => ({ activityType: a.type as 'in'|'out', timestamp: a.timestamp })),
+      });
+      if (result.isAnomalous) {
+        anomalyReason = result.reason;
+        console.warn(`Anomalous Activity Detected for user ${user.display_name} (${user.id}): ${result.reason}`);
+        // Here you could add further actions like logging to a separate table or sending a notification.
+      }
+    }
+  } catch (e) {
+      console.error('AI Anomaly Detection failed:', e);
+  }
+
   revalidatePath('/dashboard/teams');
   return { 
     success: true, 
     message: attendanceType === 'in' ? '出勤しました' : '退勤しました',
     user,
     type: attendanceType,
+    anomalyReason,
   };
 }
 
@@ -66,14 +100,15 @@ export async function createTempRegistration(cardId: string): Promise<{ success:
   const { data: existingUser, error: existingUserError } = await supabase
     .from('users')
     .select('id')
-    .eq('card_id', normalizedCardId);
+    .eq('card_id', normalizedCardId)
+    .single();
 
-  if (existingUserError) {
+  if (existingUserError && existingUserError.code !== 'PGRST116') { // Ignore "No rows found" error
     console.error("Error checking for existing user:", existingUserError);
     return { success: false, message: "ユーザーの確認中にエラーが発生しました。" };
   }
   
-  if (existingUser && existingUser.length > 0) {
+  if (existingUser) {
     return { success: false, message: 'このカードは既に登録されています。' };
   }
 
@@ -635,42 +670,26 @@ export async function getTeamWithMembersStatus(teamId: number) {
     const { data: team, error: teamError } = await supabase.from('teams').select('*').eq('id', teamId).single();
     if(teamError || !team) return { team: null, members: [], stats: null, error: teamError?.message || 'Team not found' };
 
-    const { data: members, error: membersError } = await supabase.from('users').select(`
-        id,
-        display_name,
-        generation,
-        discord_id
-    `).eq('team_id', teamId);
-    
+    const { data: members, error: membersError } = await supabase
+        .from('users')
+        .select(`
+            id,
+            display_name,
+            generation,
+            discord_id,
+            latest_attendance:attendances ( type, timestamp )
+        `)
+        .eq('team_id', teamId)
+        .order('timestamp', { foreignTable: 'attendances', ascending: false })
+        .limit(1, { foreignTable: 'attendances' });
+
     if (membersError) {
         console.error("Error fetching team members:", membersError);
         return { team, members: [], stats: null, error: membersError.message };
     }
-    
-    const memberIds = members.map(m => m.id);
-    
-    const { data: latestAttendances, error: attendanceError } = await supabase
-        .from('attendances')
-        .select('user_id, type, timestamp')
-        .in('user_id', memberIds)
-        .order('timestamp', { ascending: false });
-
-    if (attendanceError) {
-         console.error("Error fetching latest attendances:", attendanceError);
-         return { team, members: [], stats: null, error: attendanceError.message };
-    }
-
-    const statusMap = new Map<string, { type: 'in' | 'out', timestamp: string | null }>();
-    if (latestAttendances) {
-        for (const att of latestAttendances) {
-            if (!statusMap.has(att.user_id)) {
-                statusMap.set(att.user_id, { type: att.type as 'in' | 'out', timestamp: att.timestamp });
-            }
-        }
-    }
 
     const membersWithStatus = members.map(member => {
-        const latest = statusMap.get(member.id);
+        const latest: any = member.latest_attendance[0];
         return {
             ...member,
             status: latest?.type || 'out',
@@ -832,5 +851,3 @@ export async function deleteTempRegistration(id: string) {
     revalidatePath('/admin');
     return { success: true, message: '仮登録を削除しました。' };
 }
-
-    
