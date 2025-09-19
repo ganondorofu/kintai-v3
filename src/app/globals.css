@@ -68,3 +68,21 @@
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
+
+@layer utilities {
+  .rdp-day {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding-top: theme('spacing.2');
+  }
+
+  .attendance-count {
+    @apply text-xs text-muted-foreground flex items-center justify-center gap-1 mt-2;
+  }
+  
+  .rdp-day_outside .attendance-count {
+    display: none;
+  }
+}

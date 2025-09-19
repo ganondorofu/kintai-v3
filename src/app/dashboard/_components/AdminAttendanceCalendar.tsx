@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Calendar } from '@/components/ui/calendar';
 import { getMonthlyAttendanceSummary } from '@/app/actions';
-import { format } from 'date-fns';
+import { format, startOfMonth } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Users, RefreshCcw, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -62,20 +62,21 @@ export default function AdminAttendanceCalendar() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState<Date | undefined>();
 
+  const fetchSummary = async (month: Date) => {
+    setIsLoading(true);
+    const data = await getMonthlyAttendanceSummary(month);
+    setSummary(data);
+    setIsLoading(false);
+  };
+
   useEffect(() => {
-    const fetchSummary = async () => {
-      setIsLoading(true);
-      const data = await getMonthlyAttendanceSummary(date);
-      setSummary(data);
-      setIsLoading(false);
-    };
-    fetchSummary();
+    fetchSummary(date);
   }, [date]);
   
   const selectedDaySummary = selectedDay && summary ? summary[format(selectedDay, 'yyyy-MM-dd')] : null;
 
   const handleMonthChange = (month: Date) => {
-    setDate(month);
+    setDate(startOfMonth(month));
     setSelectedDay(undefined);
   };
   
@@ -102,29 +103,27 @@ export default function AdminAttendanceCalendar() {
   }
   
   const refreshData = async () => {
-      setIsLoading(true);
-      const data = await getMonthlyAttendanceSummary(date);
-      setSummary(data);
-      setIsLoading(false);
+      await fetchSummary(date);
   }
+  
+  const attendedDays = summary ? Object.keys(summary).filter(dateKey => summary[dateKey].total > 0).map(dateKey => new Date(dateKey)) : [];
 
-  const DayCell = ({ date, displayMonth }: { date: Date, displayMonth: Date }) => {
-    const dateKey = format(date, 'yyyy-MM-dd');
+  const formatDay = (day: Date) => {
+    const dateKey = format(day, 'yyyy-MM-dd');
     const daySummary = summary?.[dateKey];
-    const isOutside = date.getMonth() !== displayMonth.getMonth();
-
     return (
-        <div className={`h-full w-full flex flex-col items-center justify-start p-1 ${isOutside ? 'text-muted-foreground opacity-50' : ''}`}>
-            <time dateTime={date.toISOString()} className="text-xs">{date.getDate()}</time>
-            {daySummary && daySummary.total > 0 && !isOutside && (
-                <span className="text-xs text-muted-foreground flex items-center justify-center gap-1 mt-1">
+        <>
+            {day.getDate()}
+            {daySummary && daySummary.total > 0 && (
+                <div className="attendance-count">
                     <Users className="h-3 w-3" />
                     {daySummary.total}人
-                </span>
+                </div>
             )}
-        </div>
+        </>
     );
-  }
+  };
+
 
   return (
     <div>
@@ -133,10 +132,10 @@ export default function AdminAttendanceCalendar() {
               {format(date, 'yyyy年 M月', { locale: ja })}
           </h3>
           <div className='flex items-center gap-1'>
-              <Button variant="ghost" size="icon" onClick={goToPreviousMonth}>
+              <Button variant="ghost" size="icon" onClick={goToPreviousMonth} disabled={isLoading}>
                   <ChevronLeft />
               </Button>
-              <Button variant="ghost" size="icon" onClick={goToNextMonth}>
+              <Button variant="ghost" size="icon" onClick={goToNextMonth} disabled={isLoading}>
                   <ChevronRight />
               </Button>
               <Button variant="ghost" size="icon" onClick={refreshData} disabled={isLoading}>
@@ -154,13 +153,21 @@ export default function AdminAttendanceCalendar() {
         classNames={{
             day_selected: "bg-primary/20 text-primary-foreground font-bold border border-primary",
             months: "p-3",
-            day: "h-16 w-full p-0 text-center text-sm focus-within:relative focus-within:z-20",
+            day: "h-20 w-full p-0 text-center text-sm focus-within:relative focus-within:z-20",
             cell: "p-0",
         }}
         showOutsideDays
         components={{
           Caption: () => null,
-          DayContent: (props) => <DayCell date={props.date} displayMonth={props.displayMonth} />,
+        }}
+        modifiers={{
+            attended: attendedDays
+        }}
+        modifiersClassNames={{
+            attended: 'has-attendance'
+        }}
+        formatters={{
+            formatDay
         }}
       />
       {selectedDay && selectedDaySummary && (
