@@ -22,8 +22,8 @@ function DayCell({ day, summary }: { day: Date, summary: AttendanceSummary | nul
 
     if (!daySummary || daySummary.total === 0) {
         return (
-            <div className="flex flex-col items-center justify-center h-full w-full">
-                <time dateTime={day.toISOString()}>{day.getDate()}</time>
+            <div className="flex flex-col h-full w-full">
+                <time dateTime={day.toISOString()} className="pt-1">{day.getDate()}</time>
             </div>
         );
     }
@@ -33,9 +33,9 @@ function DayCell({ day, summary }: { day: Date, summary: AttendanceSummary | nul
     return (
         <Popover>
             <PopoverTrigger asChild>
-                <div className="flex flex-col items-center justify-center h-full w-full cursor-pointer">
-                    <time dateTime={day.toISOString()}>{day.getDate()}</time>
-                    <span className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                <div className="flex flex-col h-full w-full cursor-pointer">
+                    <time dateTime={day.toISOString()} className="pt-1">{day.getDate()}</time>
+                    <span className="text-xs text-muted-foreground flex items-center justify-center gap-1 pt-2">
                         <Users className="h-3 w-3" />
                         {daySummary.total}人
                     </span>
@@ -137,7 +137,7 @@ export default function AdminAttendanceCalendar() {
         className="rounded-md border p-0"
         classNames={{
             months: "p-3",
-            day: "h-16 w-full p-1",
+            day: "h-16 w-full p-1 text-center",
             cell: "p-0",
         }}
         showOutsideDays
