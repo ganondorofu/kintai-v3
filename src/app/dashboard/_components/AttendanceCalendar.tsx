@@ -45,16 +45,18 @@ export default function AttendanceCalendar({ userId }: { userId: string }) {
   const attendedDays = useMemo(() => attendance.map(a => {
     const d = new Date(a.date);
     d.setHours(0,0,0,0);
-    return d;
+    // Adjust for timezone offset to prevent off-by-one day errors
+    const timezoneOffset = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() + timezoneOffset);
   }), [attendance]);
 
   const formatDay = (day: Date) => {
     const isAttended = attendedDays.some(ad => ad.getTime() === day.getTime());
     return (
         <>
-            {day.getDate()}
+            <div>{day.getDate()}</div>
             <div className="attendance-count">
-                {isAttended && <Check className="h-3 w-3 text-primary" />}
+                {isAttended ? <Check className="h-4 w-4 text-primary" /> : <>&nbsp;</>}
             </div>
         </>
     );
