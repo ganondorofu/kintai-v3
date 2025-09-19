@@ -17,8 +17,8 @@ function LoginContent() {
         <div className="flex flex-col items-center justify-center p-8">
             <div className="w-full max-w-sm text-center">
                 <Icons.Logo className="w-16 h-16 mx-auto text-primary mb-4" />
-                <h1 className="text-3xl font-bold text-foreground">AttendanceZen</h1>
-                <p className="text-muted-foreground mt-2">STEM研究部 勤怠管理システム</p>
+                <h1 className="text-3xl font-bold text-foreground">STEM研究部 勤怠管理システム</h1>
+                <p className="text-muted-foreground mt-2">安全で高機能なクラウド勤怠管理システム</p>
                 
                 {error && (
                     <Alert variant="destructive" className="mt-6 text-left">
