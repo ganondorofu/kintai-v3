@@ -28,7 +28,12 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
     .eq('user_id', user.id)
     .order('timestamp', { ascending: false })
     .limit(1)
-    .single();
+    .maybeSingle();
+
+  if (lastAttendanceError) {
+      console.error('Error fetching last attendance:', lastAttendanceError);
+      return { success: false, message: '過去の打刻記録の取得中にエラーが発生しました。', user, type: null };
+  }
 
   const attendanceType = lastAttendance?.type === 'in' ? 'out' : 'in';
 
