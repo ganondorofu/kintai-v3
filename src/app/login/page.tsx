@@ -10,6 +10,7 @@ import { Suspense } from "react"
 import { useTheme } from "next-themes"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
+import { FaDiscord } from 'react-icons/fa';
 
 function LoginContent() {
     const searchParams = useSearchParams();
@@ -48,7 +49,7 @@ function LoginContent() {
                 
                 <form action={signInWithDiscord} className="mt-8">
                     <Button type="submit" className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white" size="lg">
-                        <Icons.Discord className="w-5 h-5 mr-2" />
+                        <FaDiscord className="w-5 h-5 mr-2" />
                         Discordでログイン
                     </Button>
                 </form>
