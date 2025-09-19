@@ -13,7 +13,7 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
 
   const { data: user, error: userError } = await supabase
     .from('users')
-    .select('*, teams(*)')
+    .select('*, teams (id, name)')
     .eq('card_id', cardId)
     .single();
 
@@ -276,22 +276,20 @@ export async function forceLogoutAll() {
     
     // Get all users who are currently 'in'
     const { data: inUsers, error: inUsersError } = await supabase
-        .from('users')
-        .select('id, last_attendance_type:attendances!inner(type)')
-        .order('timestamp', { foreignTable: 'attendances', ascending: false })
-        .limit(1, { foreignTable: 'attendances' });
+        .rpc('get_users_currently_in');
 
     if (inUsersError) {
-        return { success: false, message: inUsersError.message };
+        console.error('Error fetching users currently in:', inUsersError);
+        return { success: false, message: `DBエラー: ${inUsersError.message}` };
     }
 
-    const usersToLogOut = inUsers.filter(u => u.last_attendance_type[0]?.type === 'in');
-
-    if (usersToLogOut.length === 0) {
+    if (!inUsers || inUsers.length === 0) {
         return { success: true, message: '現在活動中のユーザーはいません。', count: 0 };
     }
 
-    const attendanceRecords = usersToLogOut.map(u => ({ user_id: u.id, type: 'out' as const }));
+    const usersToLogOut = inUsers.map((r: any) => r.user_id);
+
+    const attendanceRecords = usersToLogOut.map((userId: string) => ({ user_id: userId, type: 'out' as const }));
     const { error: insertError } = await supabase.from('attendances').insert(attendanceRecords);
 
     if (insertError) {
