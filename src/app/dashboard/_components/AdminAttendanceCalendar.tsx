@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useTransition } from 'react';
 import { Calendar } from '@/components/ui/calendar';
 import { getMonthlyAttendanceSummary } from '@/app/actions';
 import { format, startOfMonth } from 'date-fns';
@@ -9,6 +9,7 @@ import { ChevronLeft, ChevronRight, RefreshCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { convertGenerationToGrade } from '@/lib/utils';
 
 type DailySummary = {
   total: number;
@@ -49,7 +50,7 @@ function TeamBreakdown({ date, summary }: { date: Date; summary: DailySummary })
                                         .sort(([a], [b]) => Number(b) - Number(a))
                                         .map(([generation, count]) => (
                                             <div key={generation} className="flex justify-between items-center text-sm">
-                                                <span className="text-muted-foreground">{generation}期生</span>
+                                                <span className="text-muted-foreground">{convertGenerationToGrade(Number(generation))}</span>
                                                 <span className="font-medium">{count}人</span>
                                             </div>
                                         ))}
@@ -68,6 +69,7 @@ export default function AdminAttendanceCalendar() {
   const [summary, setSummary] = useState<AttendanceSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState<Date | undefined>();
+  const [isPending, startTransition] = useTransition();
 
   const fetchSummary = async (month: Date) => {
     setIsLoading(true);
@@ -77,7 +79,9 @@ export default function AdminAttendanceCalendar() {
   };
 
   useEffect(() => {
-    fetchSummary(date);
+    startTransition(() => {
+        fetchSummary(date);
+    });
   }, [date]);
   
   const selectedDaySummary = selectedDay && summary ? summary[format(selectedDay, 'yyyy-MM-dd')] : null;
@@ -109,8 +113,12 @@ export default function AdminAttendanceCalendar() {
   }
   
   const refreshData = async () => {
-      await fetchSummary(date);
+      startTransition(() => {
+        fetchSummary(date);
+    });
   }
+  
+  const loading = isLoading || isPending;
   
   const attendedDays = useMemo(() => summary ? Object.keys(summary).filter(dateKey => summary[dateKey].total > 0).map(dateKey => new Date(dateKey)) : [], [summary]);
 
@@ -139,14 +147,14 @@ export default function AdminAttendanceCalendar() {
               {format(date, 'yyyy年 M月', { locale: ja })}
           </h3>
           <div className='flex items-center gap-1'>
-              <Button variant="ghost" size="icon" onClick={goToPreviousMonth} disabled={isLoading}>
+              <Button variant="ghost" size="icon" onClick={goToPreviousMonth} disabled={loading}>
                   <ChevronLeft />
               </Button>
-              <Button variant="ghost" size="icon" onClick={goToNextMonth} disabled={isLoading}>
+              <Button variant="ghost" size="icon" onClick={goToNextMonth} disabled={loading}>
                   <ChevronRight />
               </Button>
-              <Button variant="ghost" size="icon" onClick={refreshData} disabled={isLoading}>
-                  <RefreshCcw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              <Button variant="ghost" size="icon" onClick={refreshData} disabled={loading}>
+                  <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               </Button>
           </div>
       </div>
@@ -155,9 +163,10 @@ export default function AdminAttendanceCalendar() {
         onMonthChange={handleMonthChange}
         onDayClick={handleDayClick}
         selected={selectedDay}
-        disabled={isLoading}
-        className="rounded-md border"
+        disabled={loading}
+        className="rounded-md border p-0"
         classNames={{
+            months: "p-3",
             day_selected: "bg-primary/20 text-primary-foreground font-bold border border-primary",
         }}
         showOutsideDays
