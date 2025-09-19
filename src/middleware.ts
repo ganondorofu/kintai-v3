@@ -20,6 +20,9 @@ export async function middleware(request: NextRequest) {
       url.search = `error=${encodeURIComponent("無効なKioskトークンです。")}`;
       return NextResponse.redirect(url);
     }
+    
+    // トークンが有効な場合は、そのままKioskページを表示
+    return NextResponse.next();
   }
 
   // 他のすべてのルートでSupabaseのセッションを更新
