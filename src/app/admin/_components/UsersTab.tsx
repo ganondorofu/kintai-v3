@@ -237,7 +237,7 @@ export default function UsersTab({ users: initialUsers, teams, currentUser }: Us
                             </TableCell>
                             <TableCell className="space-x-2 flex items-center">
                                 <Button size="sm" variant="outline" onClick={() => handleForceToggle(user.id)} disabled={isToggling}>
-                                    {user.status === 'in' ? '強制退勤' : '強制出勤'}
+                                    {user.status === 'in' ? '強制退勤させる' : '強制出勤させる'}
                                 </Button>
                                 <TooltipProvider>
                                     <Tooltip>
