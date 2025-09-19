@@ -127,7 +127,7 @@ export default function AdminAttendanceCalendar() {
                     <Users className="h-3 w-3" />
                     {total}
                 </div>
-            ) : <div className="attendance-count">&nbsp;</div>}
+            ) : <div className='attendance-count'>&nbsp;</div>}
         </>
     );
   };

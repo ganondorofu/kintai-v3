@@ -75,6 +75,6 @@
   }
   
   .rdp-day_outside .attendance-count {
-    display: none;
+    visibility: hidden;
   }
 }
