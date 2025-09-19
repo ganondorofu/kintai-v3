@@ -70,16 +70,8 @@
 }
 
 @layer utilities {
-  .rdp-day {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-    padding-top: theme('spacing.2');
-  }
-
   .attendance-count {
-    @apply text-xs text-muted-foreground flex items-center justify-center gap-1 mt-2;
+    @apply text-xs text-muted-foreground flex items-center justify-center gap-1 absolute bottom-1.5 left-0 right-0;
   }
   
   .rdp-day_outside .attendance-count {

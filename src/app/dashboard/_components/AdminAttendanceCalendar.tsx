@@ -112,20 +112,24 @@ export default function AdminAttendanceCalendar() {
       await fetchSummary(date);
   }
   
-  const attendedDays = summary ? Object.keys(summary).filter(dateKey => summary[dateKey].total > 0).map(dateKey => new Date(dateKey)) : [];
+  const attendedDays = useMemo(() => summary ? Object.keys(summary).filter(dateKey => summary[dateKey].total > 0).map(dateKey => new Date(dateKey)) : [], [summary]);
 
   const formatDay = (day: Date) => {
     const dateKey = format(day, 'yyyy-MM-dd');
     const daySummary = summary?.[dateKey];
+    const total = daySummary?.total;
+
     return (
         <>
             {day.getDate()}
-            {daySummary && daySummary.total > 0 && (
-                <div className="attendance-count">
-                    <Users className="h-3 w-3" />
-                    {daySummary.total}人
-                </div>
-            )}
+            <div className="attendance-count">
+                {total && total > 0 ? (
+                    <>
+                        <Users className="h-3 w-3" />
+                        {total}
+                    </>
+                ) : null}
+            </div>
         </>
     );
   };
@@ -155,12 +159,10 @@ export default function AdminAttendanceCalendar() {
         onDayClick={handleDayClick}
         selected={selectedDay}
         disabled={isLoading}
-        className="rounded-md border p-0"
+        className="rounded-md border"
         classNames={{
+            day: "h-14 w-14",
             day_selected: "bg-primary/20 text-primary-foreground font-bold border border-primary",
-            months: "p-3",
-            cell: "p-0",
-            day: "h-20 w-full p-0 text-center text-sm",
         }}
         showOutsideDays
         components={{
