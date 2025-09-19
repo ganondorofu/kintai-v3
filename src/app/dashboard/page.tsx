@@ -17,6 +17,7 @@ import ClientRelativeTime from "./_components/ClientRelativeTime";
 import { calculateTotalActivityTime } from "../actions";
 import AdminAttendanceCalendar from "./_components/AdminAttendanceCalendar";
 import { convertGenerationToGrade } from "@/lib/utils";
+import { redirect } from "next/navigation";
 
 export const dynamic = 'force-dynamic';
 
@@ -24,8 +25,16 @@ export default async function DashboardPage() {
     const supabase = await createSupabaseServerClient();
     const { data: { user } } = await supabase.auth.getUser();
 
+    if (!user) {
+        redirect('/login');
+    }
+
     const { data: profile } = await supabase.from('users').select('*, teams(name)').eq('id', user!.id).single();
     
+    if (!profile) {
+        redirect('/register/unregistered');
+    }
+
     const thirtyDaysAgo = format(subDays(new Date(), 30), 'yyyy-MM-dd');
     const userCreatedAtDate = format(new Date(profile!.created_at), 'yyyy-MM-dd');
 
@@ -108,7 +117,7 @@ export default async function DashboardPage() {
                 <CardContent>
                     <div className="text-2xl font-bold">{attendanceRate.toFixed(1)}%</div>
                     <p className="text-xs text-muted-foreground">
-                        過去30日の活動日数: {totalClubDays}日
+                        活動日数(登録後): {totalClubDays}日
                     </p>
                 </CardContent>
             </Card>
