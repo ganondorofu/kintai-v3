@@ -12,7 +12,7 @@ import { flagAnomalousActivity } from '@/ai/flows/flag-anomalous-activity';
 
 type UserWithTeam = Tables<'users'> & { teams: Tables<'teams'> | null };
 
-export async function recordAttendance(cardId: string): Promise<{ success: boolean; message: string; user: UserWithTeam | null; type: 'in' | 'out' | null; anomalyReason?: string }> {
+export async function recordAttendance(cardId: string): Promise<{ success: boolean; message: string; user: UserWithTeam | null; type: 'in' | 'out' | null; }> {
   const supabase = createSupabaseAdminClient();
   
   const normalizedCardId = cardId.replace(/:/g, '').toLowerCase();
@@ -53,42 +53,12 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
     return { success: false, message: '打刻処理中にエラーが発生しました。', user, type: null };
   }
   
-  // AI Anomaly Detection
-  let anomalyReason: string | undefined;
-  try {
-    const { data: recentActivity, error: activityError } = await supabase
-      .from('attendances')
-      .select('type, timestamp')
-      .eq('user_id', user.id)
-      .order('timestamp', { ascending: false })
-      .limit(10);
-
-    if (activityError) {
-      console.error('AI Anomaly Detection - Error fetching recent activity:', activityError);
-    } else {
-      const result = await flagAnomalousActivity({
-        userId: user.id,
-        activityType: attendanceType,
-        timestamp: insertedData.timestamp,
-        recentActivity: (recentActivity || []).map(a => ({ activityType: a.type as 'in'|'out', timestamp: a.timestamp })),
-      });
-      if (result.isAnomalous) {
-        anomalyReason = result.reason;
-        console.warn(`Anomalous Activity Detected for user ${user.display_name} (${user.id}): ${result.reason}`);
-        // Here you could add further actions like logging to a separate table or sending a notification.
-      }
-    }
-  } catch (e) {
-      console.error('AI Anomaly Detection failed:', e);
-  }
-
   revalidatePath('/dashboard/teams');
   return { 
     success: true, 
     message: attendanceType === 'in' ? '出勤しました' : '退勤しました',
     user,
     type: attendanceType,
-    anomalyReason,
   };
 }
 
@@ -672,24 +642,45 @@ export async function getTeamWithMembersStatus(teamId: number) {
 
     const { data: members, error: membersError } = await supabase
         .from('users')
-        .select(`
-            id,
-            display_name,
-            generation,
-            discord_id,
-            latest_attendance:attendances ( type, timestamp )
-        `)
+        .select('id, display_name, generation, discord_id')
         .eq('team_id', teamId)
-        .order('timestamp', { foreignTable: 'attendances', ascending: false })
-        .limit(1, { foreignTable: 'attendances' });
+        .order('generation', { ascending: false })
+        .order('display_name', { ascending: true });
 
     if (membersError) {
         console.error("Error fetching team members:", membersError);
         return { team, members: [], stats: null, error: membersError.message };
     }
 
+    const userIds = members.map(m => m.id);
+
+    // Get the latest attendance record for each user in the team
+    const { data: latestAttendances, error: latestAttendancesError } = await supabase
+        .from('attendances')
+        .select(`
+            user_id,
+            type,
+            timestamp
+        `)
+        .in('user_id', userIds)
+        .order('timestamp', { ascending: false });
+
+    if (latestAttendancesError) {
+        console.error("Error fetching latest attendances:", latestAttendancesError);
+        // Continue without status if this fails, but log the error
+    }
+
+    const statusMap = new Map<string, { type: 'in' | 'out', timestamp: string }>();
+    if (latestAttendances) {
+        for (const att of latestAttendances) {
+            if (!statusMap.has(att.user_id)) {
+                statusMap.set(att.user_id, { type: att.type as 'in' | 'out', timestamp: att.timestamp });
+            }
+        }
+    }
+
     const membersWithStatus = members.map(member => {
-        const latest: any = member.latest_attendance[0];
+        const latest = statusMap.get(member.id);
         return {
             ...member,
             status: latest?.type || 'out',
