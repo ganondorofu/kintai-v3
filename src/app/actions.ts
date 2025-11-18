@@ -16,7 +16,7 @@ type Team = Tables<'member', 'teams'>;
 
 type UserWithTeam = Member & { teams: Team[] | null };
 
-export async function recordAttendance(cardId: string): Promise<{ success: boolean; message: string; user: Member | null; type: 'in' | 'out' | null; }> {
+export async function recordAttendance(cardId: string): Promise<{ success: boolean; message: string; user: { display_name: string | null; } | null; type: 'in' | 'out' | null; }> {
   const supabase = createSupabaseAdminClient();
   
   const normalizedCardId = cardId.replace(/:/g, '').toLowerCase();
@@ -24,7 +24,7 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
   const { data: attendanceUser, error: attendanceUserError } = await supabase
     .schema('attendance')
     .from('users')
-    .select('id, user_profile:member_members(display_name)')
+    .select('user_id, member:member_members(display_name)')
     .eq('card_id', normalizedCardId)
     .single();
 
@@ -32,9 +32,9 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
     return { success: false, message: '未登録のカードです。', user: null, type: null };
   }
 
-  const userId = attendanceUser.id;
+  const userId = attendanceUser.user_id;
   // @ts-ignore
-  const userDisplayName = attendanceUser.user_profile?.display_name || '名無しさん';
+  const userDisplayName = attendanceUser.member?.display_name || '名無しさん';
 
   const { data: lastAttendance, error: lastAttendanceError } = await supabase
     .schema('attendance')
@@ -66,7 +66,7 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
   return { 
     success: true, 
     message: attendanceType === 'in' ? '出勤しました' : '退勤しました',
-    user: { display_name: userDisplayName } as Member,
+    user: { display_name: userDisplayName },
     type: attendanceType,
   };
 }
@@ -79,7 +79,7 @@ export async function createTempRegistration(cardId: string): Promise<{ success:
   const { data: existingUser, error: existingUserError } = await supabase
     .schema('attendance')
     .from('users')
-    .select('id')
+    .select('user_id')
     .eq('card_id', normalizedCardId)
     .single();
 
@@ -128,14 +128,9 @@ export async function getTempRegistration(token: string) {
 
 export async function completeRegistration(formData: FormData) {
   const token = formData.get('token') as string;
-  // displayName is now fetched from API
-  const generation = Number(formData.get('generation'));
-  const teamId = Number(formData.get('teamId'));
-  const studentNumber = formData.get('studentNumber') as string;
-  const status = Number(formData.get('status'));
 
-  if (!token || !generation || !teamId || !studentNumber || status === null) {
-    return redirect(`/register/${token}?error=Missing form data`);
+  if (!token) {
+    return redirect(`/register/${token}?error=Missing token`);
   }
 
   const supabase = createSupabaseServerClient();
@@ -145,7 +140,19 @@ export async function completeRegistration(formData: FormData) {
   if (!user || !user.user_metadata.provider_id) {
     return redirect(`/register/${token}?error=Not authenticated`);
   }
-  const discordId = user.user_metadata.provider_id;
+  
+  // Verify member exists in member schema
+  const { data: member, error: memberError } = await adminSupabase
+    .schema('member')
+    .from('members')
+    .select('supabase_auth_user_id')
+    .eq('supabase_auth_user_id', user.id)
+    .single();
+
+  if (memberError || !member) {
+    console.error("Error fetching member profile or profile does not exist:", memberError);
+    return redirect(`/register/${token}?error=User profile not found in central database. Please contact an admin.`);
+  }
 
   const { data: tempReg, error: tempRegError } = await adminSupabase
     .schema('attendance')
@@ -163,61 +170,19 @@ export async function completeRegistration(formData: FormData) {
   if (new Date(tempReg.expires_at) < new Date()) {
     return redirect(`/register/${token}?error=Session expired`);
   }
-
-  // Fetch real name from API
-  const realName = await fetchSingleMemberName(discordId);
-  if (!realName) {
-      return redirect(`/register/${token}?error=Failed to fetch user name from API. Make sure user is in the Discord server.`);
-  }
-
-  // 1. Create user in `member.members`
-  const memberData: TablesInsert<'member', 'members'> = {
-    id: user.id,
-    display_name: realName,
-    discord_id: discordId,
-    generation: generation,
-    student_number: studentNumber,
-    status: status,
-    is_admin: false,
-  };
-
-  const { error: insertMemberError } = await adminSupabase.schema('member').from('members').insert(memberData);
-
-  if (insertMemberError) {
-    console.error("Error inserting member:", insertMemberError);
-    if(insertMemberError.code === '23505') { // unique constraint violation
-       // Try to update existing user that might not be fully registered
-       const { error: updateError } = await adminSupabase.schema('member').from('members').update(memberData).eq('id', user.id);
-       if(updateError) {
-          return redirect(`/register/${token}?error=User already exists and failed to update: ${updateError.message}`);
-       }
-    } else {
-      return redirect(`/register/${token}?error=${insertMemberError.message}`);
-    }
-  }
-
-  // 2. Create user in `attendance.users`
+  
+  // Create user in `attendance.users`
   const attendanceUserData: TablesInsert<'attendance', 'users'> = {
-      id: user.id,
+      user_id: user.id,
       card_id: tempReg.card_id
   }
-  const { error: insertAttendanceUserError } = await adminSupabase.schema('attendance').from('users').upsert(attendanceUserData, { onConflict: 'id' });
+  const { error: insertAttendanceUserError } = await adminSupabase.schema('attendance').from('users').upsert(attendanceUserData, { onConflict: 'user_id' });
   if (insertAttendanceUserError) {
       console.error("Error creating attendance user link:", insertAttendanceUserError);
       return redirect(`/register/${token}?error=Failed to link card to user.`);
   }
-
-  // 3. Link user to team in `member.member_team_relations`
-  const { error: insertTeamRelError } = await adminSupabase.schema('member').from('member_team_relations').upsert({
-      member_id: user.id,
-      team_id: teamId
-  }, { onConflict: 'member_id' });
-  if (insertTeamRelError) {
-      console.error("Error creating team relation:", insertTeamRelError);
-       return redirect(`/register/${token}?error=Failed to add user to team.`);
-  }
   
-  // 4. Mark temp registration as used
+  // Mark temp registration as used
   await adminSupabase.schema('attendance').from('temp_registrations').update({ is_used: true }).eq('id', tempReg.id);
 
   revalidatePath('/admin');
@@ -281,12 +246,12 @@ export async function signInAsAnonymousAdmin() {
     }
 
     // Check if member profile exists
-    const { data: memberProfile } = await adminSupabase.schema('member').from('members').select('id').eq('id', authUser.id).single();
+    const { data: memberProfile } = await adminSupabase.schema('member').from('members').select('supabase_auth_user_id').eq('supabase_auth_user_id', authUser.id).single();
     if (!memberProfile) {
         const { error: createMemberError } = await adminSupabase.schema('member').from('members').insert({
-            id: authUser.id,
+            supabase_auth_user_id: authUser.id,
             display_name: '匿名管理者',
-            discord_id: 'anonymous_admin',
+            discord_uid: 'anonymous_admin',
             generation: 0,
             status: 2,
             is_admin: true,
@@ -297,10 +262,10 @@ export async function signInAsAnonymousAdmin() {
     }
 
     // Check if attendance profile exists
-    const { data: attendanceProfile } = await adminSupabase.schema('attendance').from('users').select('id').eq('id', authUser.id).single();
+    const { data: attendanceProfile } = await adminSupabase.schema('attendance').from('users').select('user_id').eq('user_id', authUser.id).single();
     if (!attendanceProfile) {
          const { error: createAttendanceUserError } = await adminSupabase.schema('attendance').from('users').insert({
-            id: authUser.id,
+            user_id: authUser.id,
             card_id: `admin_${randomUUID().slice(0,8)}`,
         });
         if (createAttendanceUserError) {
@@ -490,7 +455,7 @@ export async function getTeamsWithMemberStatus() {
             acc[user.team_id].current++;
         }
         return acc;
-    }, {} as Record<number, { current: number; total: number }>);
+    }, {} as Record<string, { current: number; total: number }>);
 
     return teams.map(team => ({
         ...team,
@@ -499,45 +464,16 @@ export async function getTeamsWithMemberStatus() {
 }
 
 
-export async function updateUser(userId: string, data: Partial<Member & { card_id: string; team_id: number }>) {
-    const supabase = createSupabaseAdminClient();
-    const { card_id, team_id, ...memberData } = data;
-
-    if (Object.keys(memberData).length > 0) {
-        const { error: memberError } = await supabase.schema('member').from('members').update(memberData).eq('id', userId);
-        if(memberError) return { success: false, message: memberError.message };
-    }
-    
-    if (card_id) {
-        const normalizedCardId = card_id.replace(/:/g, '').toLowerCase();
-        const { error: cardError } = await supabase.schema('attendance').from('users').update({ card_id: normalizedCardId }).eq('id', userId);
-        if(cardError) return { success: false, message: cardError.message };
-    }
-    
-    if (team_id) {
-         const { error: teamError } = await supabase.schema('member').from('member_team_relations').update({ team_id }).eq('member_id', userId);
-         if(teamError) {
-             const { error: insertError } = await supabase.schema('member').from('member_team_relations').insert({ member_id: userId, team_id });
-             if (insertError) {
-                return { success: false, message: `Failed to update or insert team relation: ${teamError.message} & ${insertError.message}` };
-             }
-         }
-    }
-    
-    revalidatePath('/admin');
-    return { success: true, message: 'ユーザー情報を更新しました。' };
-}
-
 export async function createTeam(name: string) {
     const supabase = createSupabaseAdminClient();
-    const { error } = await supabase.schema('member').from('teams').insert({ name });
+    const { error } = await supabase.schema('member').from('teams').insert({ name, discord_role_id: 'temp-id' }); // discord_role_id is not null
     if(error) return { success: false, message: error.message };
     revalidatePath('/admin');
     revalidatePath('/dashboard', 'layout');
     return { success: true, message: '班を作成しました。'};
 }
 
-export async function updateTeam(id: number, name: string) {
+export async function updateTeam(id: string, name: string) {
     const supabase = createSupabaseAdminClient();
     const { error } = await supabase.schema('member').from('teams').update({ name }).eq('id', id);
     if(error) return { success: false, message: error.message };
@@ -546,7 +482,7 @@ export async function updateTeam(id: number, name: string) {
     return { success: true, message: '班を更新しました。'};
 }
 
-export async function deleteTeam(id: number) {
+export async function deleteTeam(id: string) {
     const supabase = createSupabaseAdminClient();
     const { count } = await supabase.schema('member').from('member_team_relations').select('*', { count: 'exact' }).eq('team_id', id);
 
@@ -623,13 +559,14 @@ export async function forceToggleAttendance(userId: string) {
     return { success: true, message: `ユーザーを強制的に${newType === 'in' ? '出勤' : '退勤'}させました。` };
 }
 
-export async function getTeamWithMembersStatus(teamId: number) {
+export async function getTeamWithMembersStatus(teamId: string) {
     const supabase = createSupabaseAdminClient();
     const { data: { user } } = await createSupabaseServerClient().auth.getUser();
     if (!user) return { team: null, members: [], stats: null, error: 'Not authenticated' };
     
-    const { data: profile } = await supabase.schema('member').from('members').select('is_admin, member_team_relations!inner(team_id)').eq('id', user.id).single();
+    const { data: profile } = await supabase.schema('member').from('members').select('is_admin, member_team_relations!inner(team_id)').eq('supabase_auth_user_id', user.id).single();
 
+    // @ts-ignore
     if (!profile?.is_admin && !profile?.member_team_relations.some(rel => rel.team_id === teamId)) {
         return { team: null, members: [], stats: null, error: 'Access denied' };
     }
@@ -667,7 +604,7 @@ export async function getTeamWithMembersStatus(teamId: number) {
 }
 
 
-async function getTeamStats(teamId: number) {
+async function getTeamStats(teamId: string) {
     const supabase = createSupabaseAdminClient();
     const today = new Date();
 
@@ -706,7 +643,7 @@ async function getTeamStats(teamId: number) {
 }
 
 
-export async function getMonthlyTeamAttendanceStats(teamId: number, days: number): Promise<number> {
+export async function getMonthlyTeamAttendanceStats(teamId: string, days: number): Promise<number> {
     const supabase = createSupabaseAdminClient();
     const { data: teamMembers, error: teamMembersError } = await supabase
         .schema('member')
@@ -833,8 +770,8 @@ export async function updateAllUserDisplayNames(): Promise<{ success: boolean, m
     const { data: users, error: usersError } = await supabase
         .schema('member')
         .from('members')
-        .select('id, discord_id')
-        .not('discord_id', 'eq', 'anonymous_admin');
+        .select('supabase_auth_user_id, discord_uid')
+        .not('discord_uid', 'eq', 'anonymous_admin');
 
     if (usersError) {
         return { success: false, message: `ユーザーの取得に失敗しました: ${usersError.message}`, count: 0 };
@@ -853,16 +790,16 @@ export async function updateAllUserDisplayNames(): Promise<{ success: boolean, m
     const errors: string[] = [];
 
     for (const user of users) {
-        const newName = nameMap.get(user.discord_id);
+        const newName = nameMap.get(user.discord_uid);
         if (newName) {
             const { error: updateError } = await supabase
                 .schema('member')
                 .from('members')
                 .update({ display_name: newName })
-                .eq('id', user.id);
+                .eq('supabase_auth_user_id', user.supabase_auth_user_id);
 
             if (updateError) {
-                errors.push(`ID ${user.id} の更新に失敗: ${updateError.message}`);
+                errors.push(`ID ${user.supabase_auth_user_id} の更新に失敗: ${updateError.message}`);
             } else {
                 updatedCount++;
             }

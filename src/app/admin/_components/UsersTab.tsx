@@ -12,25 +12,12 @@ import {
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogClose,
-} from "@/components/ui/dialog"
-import { Edit, ArrowUpDown, Search, RefreshCw } from "lucide-react"
+import { ArrowUpDown, Search, RefreshCw } from "lucide-react"
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { updateUser, forceToggleAttendance, updateAllUserDisplayNames } from '@/app/actions';
+import { forceToggleAttendance, updateAllUserDisplayNames } from '@/app/actions';
 import { Tables } from '@/lib/types';
 import { User } from '@supabase/supabase-js';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { convertGenerationToGrade } from '@/lib/utils';
 import {
   AlertDialog,
@@ -49,7 +36,7 @@ type UserWithDetails = {
     display_name: string;
     card_id: string | null;
     team_name: string | null;
-    team_id: number | null;
+    team_id: string | null;
     generation: number;
     is_admin: boolean;
     latest_attendance_type: string | null;
@@ -100,27 +87,17 @@ const SortableHeader = ({
 
 
 export default function UsersTab({ users: initialUsers, teams, currentUser }: UsersTabProps) {
-    const [isSubmitting, setIsSubmitting] = useState(false);
     const { toast } = useToast();
-    const [dialogOpen, setDialogOpen] = useState(false);
-    const [editingUser, setEditingUser] = useState<UserWithDetails | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'display_name', direction: 'asc' });
     const [isToggling, startToggleTransition] = useTransition();
     const [isUpdatingNames, startUpdatingNamesTransition] = useTransition();
 
-
-    const handleEdit = (user: UserWithDetails) => {
-        setEditingUser(user);
-        setDialogOpen(true);
-    }
-    
     const handleForceToggle = (userId: string) => {
         startToggleTransition(async () => {
             const result = await forceToggleAttendance(userId);
             if (result.success) {
                 toast({ title: "成功", description: result.message });
-                // We re-fetch data on success, so no need to update state manually
             } else {
                 toast({ variant: "destructive", title: "エラー", description: result.message });
             }
@@ -169,42 +146,12 @@ export default function UsersTab({ users: initialUsers, teams, currentUser }: Us
         return filtered;
     }, [initialUsers, searchTerm, sort]);
 
-
-    const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
-        if (!editingUser) return;
-        
-        setIsSubmitting(true);
-        const formData = new FormData(event.currentTarget);
-        
-        const updatedData = {
-            display_name: formData.get('display_name') as string,
-            generation: Number(formData.get('generation')),
-            team_id: Number(formData.get('team_id')),
-            is_admin: formData.get('is_admin') === 'true',
-            deleted_at: formData.get('is_active') === 'on' ? null : new Date().toISOString(),
-            card_id: formData.get('card_id') as string,
-            status: Number(formData.get('status')),
-            student_number: formData.get('student_number') as string,
-        };
-
-        const result = await updateUser(editingUser.id, updatedData);
-
-        if (result.success) {
-            toast({ title: "成功", description: result.message });
-            setDialogOpen(false);
-        } else {
-            toast({ variant: "destructive", title: "エラー", description: result.message });
-        }
-        setIsSubmitting(false);
-    }
-
   return (
      <Card>
             <CardHeader>
                 <CardTitle>ユーザー管理</CardTitle>
                 <CardDescription>
-                    ユーザー情報の表示と編集、および手動での出退勤操作を行います。
+                    ユーザー情報の表示と、手動での出退勤操作を行います。ユーザー情報の編集は中央管理システムで行ってください。
                 </CardDescription>
             </CardHeader>
             <CardContent>
@@ -274,105 +221,12 @@ export default function UsersTab({ users: initialUsers, teams, currentUser }: Us
                                 <Button size="sm" variant="outline" onClick={() => handleForceToggle(user.id)} disabled={isToggling}>
                                     {user.latest_attendance_type === 'in' ? '強制退勤させる' : '強制出勤させる'}
                                 </Button>
-                                <TooltipProvider>
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <Button size="icon" variant="ghost" onClick={() => handleEdit(user)}>
-                                                <Edit className="h-4 w-4" />
-                                                <span className="sr-only">Edit user</span>
-                                            </Button>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                            <p>ユーザー情報を編集</p>
-                                        </TooltipContent>
-                                    </Tooltip>
-                                </TooltipProvider>
                             </TableCell>
                         </TableRow>
                     ))}
                 </TableBody>
             </Table>
             </CardContent>
-             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogContent>
-                    <form onSubmit={handleSubmit}>
-                        <DialogHeader>
-                            <DialogTitle>ユーザー情報の編集</DialogTitle>
-                            <DialogDescription>
-                                {editingUser?.display_name} の情報を編集します。
-                            </DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-4 py-4">
-                            <div>
-                                <Label htmlFor="display_name">表示名</Label>
-                                <Input id="display_name" name="display_name" defaultValue={editingUser?.display_name} required />
-                            </div>
-                             <div>
-                                <Label htmlFor="student_number">学籍番号</Label>
-                                <Input id="student_number" name="student_number" defaultValue={editingUser?.student_number || ''} />
-                            </div>
-                            <div>
-                                <Label htmlFor="generation">期生</Label>
-                                <Input id="generation" name="generation" type="number" defaultValue={editingUser?.generation} required />
-                            </div>
-                             <div>
-                                <Label htmlFor="status">身分</Label>
-                                <Select name="status" defaultValue={String(editingUser?.status)}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="身分を選択" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="0">中学生</SelectItem>
-                                        <SelectItem value="1">高校生</SelectItem>
-                                        <SelectItem value="2">OB/OG</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div>
-                                <Label htmlFor="team_id">班</Label>
-                                <Select name="team_id" defaultValue={String(editingUser?.team_id)}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="班を選択" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {teams.map(team => (
-                                            <SelectItem key={team.id} value={String(team.id)}>{team.name}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                             <div>
-                                <Label htmlFor="is_admin">役割</Label>
-                                <Select name="is_admin" defaultValue={String(editingUser?.is_admin)}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="役割を選択" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="false">部員</SelectItem>
-                                        <SelectItem value="true">管理者</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                             <div>
-                                <Label htmlFor="card_id">カードID</Label>
-                                <Input id="card_id" name="card_id" defaultValue={editingUser?.card_id || ''} required />
-                            </div>
-                             <div className="flex items-center space-x-2">
-                                <Switch id="is_active" name="is_active" defaultChecked={!editingUser?.deleted_at} />
-                                <Label htmlFor="is_active">アカウントを有効にする</Label>
-                            </div>
-                        </div>
-                        <DialogFooter>
-                            <DialogClose asChild>
-                                <Button variant="outline" type="button">キャンセル</Button>
-                            </DialogClose>
-                            <Button type="submit" disabled={isSubmitting}>
-                                {isSubmitting ? "保存中..." : "保存"}
-                            </Button>
-                        </DialogFooter>
-                    </form>
-                </DialogContent>
-             </Dialog>
         </Card>
   )
 }
