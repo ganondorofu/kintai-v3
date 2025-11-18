@@ -8,7 +8,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { randomUUID } from 'crypto';
 import { differenceInSeconds, startOfDay, endOfDay, subDays, format, startOfMonth, endOfMonth } from 'date-fns';
-import { fetchAllMemberNames, fetchSingleMemberName } from '@/lib/name-api';
+import { fetchAllMemberNames } from '@/lib/name-api';
 
 type Member = Tables<'member', 'members'>;
 type AttendanceUser = Tables<'attendance', 'users'>;
@@ -194,7 +194,7 @@ export async function signInWithDiscord() {
         provider: 'discord',
         options: {
             redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
-            scopes: 'identify guilds',
+            scopes: 'identify',
             queryParams: {
                 prompt: 'consent',
             },
@@ -766,11 +766,11 @@ export async function updateAllUserDisplayNames(): Promise<{ success: boolean, m
     }
 
     const nameApiResult = await fetchAllMemberNames();
-    if (!nameApiResult) {
+    if (!nameApiResult.data) {
         return { success: false, message: 'APIからの名前リストの取得に失敗しました。', count: 0 };
     }
 
-    const nameMap = new Map<string, string>(nameApiResult.map(item => [item.uid, item.name]));
+    const nameMap = new Map<string, string>(nameApiResult.data.map(item => [item.uid, item.name]));
     let updatedCount = 0;
     const errors: string[] = [];
 
@@ -800,6 +800,8 @@ export async function updateAllUserDisplayNames(): Promise<{ success: boolean, m
     revalidatePath('/dashboard');
     return { success: true, message: `${updatedCount}人のユーザー表示名を正常に更新しました。`, count: updatedCount };
 }
+
+    
 
     
 

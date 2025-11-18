@@ -1,3 +1,4 @@
+
 'use client'
 
 import { Button } from "@/components/ui/button"
@@ -29,12 +30,7 @@ function LoginContent() {
                         <AlertTitle className="text-blue-800 dark:text-blue-200">サーバーへの参加が必要です</AlertTitle>
                         <AlertDescription>
                             <p className="mb-4">このシステムを利用するには、指定のDiscordサーバーに参加している必要があります。下のボタンからサーバーに参加後、再度ログインをお試しください。</p>
-                            <Button asChild className="w-full bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white">
-                                <Link href="https://discord.gg/QG6Q6nQFth" target="_blank">
-                                    <LinkIcon className="mr-2 h-4 w-4" />
-                                    Discordサーバーに参加する
-                                </Link>
-                            </Button>
+                             <p className="text-xs text-muted-foreground">※参加用リンクは管理者にお問い合わせください。</p>
                         </AlertDescription>
                     </Alert>
                 ) : error && (
@@ -99,3 +95,5 @@ export default function LoginPage() {
         </main>
     )
 }
+
+    
