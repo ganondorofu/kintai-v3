@@ -23,7 +23,7 @@ async function RegisterPageImpl({ params }: { params: { token: string } }) {
     
     let fullProfile = null;
     if (session?.user?.id) {
-        const { data } = await supabase.schema('member').from('users').select(`
+        const { data } = await supabase.schema('member').from('members').select(`
             *,
             attendance_user:attendance_users(card_id),
             teams:member_team_relations(teams(name))

@@ -16,6 +16,17 @@ export default async function AdminPage() {
   const supabase = createSupabaseServerClient();
   const { data: { user: currentUser } } = await supabase.auth.getUser();
 
+  if (!currentUser) {
+    // This case should be handled by layout, but as a safeguard.
+    return (
+       <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Authentication Error</AlertTitle>
+            <AlertDescription>Could not retrieve user session.</AlertDescription>
+        </Alert>
+    );
+  }
+
   const [
     usersResult,
     teamsResult,
@@ -92,7 +103,7 @@ export default async function AdminPage() {
           <UsersTab 
             users={users || []} 
             teams={teams || []} 
-            currentUser={currentUser!}
+            currentUser={currentUser}
           />
         </TabsContent>
         <TabsContent value="teams">
@@ -104,7 +115,7 @@ export default async function AdminPage() {
         <TabsContent value="announcements">
           <AnnouncementsTab 
             announcements={announcements || []} 
-            currentUser={currentUser!}
+            currentUser={currentUser}
           />
         </TabsContent>
         <TabsContent value="logs">

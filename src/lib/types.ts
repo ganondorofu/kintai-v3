@@ -45,7 +45,7 @@ export type Database = {
             foreignKeyName: "announcements_author_id_fkey"
             columns: ["author_id"]
             isOneToOne: false
-            referencedRelation: "users"
+            referencedRelation: "members"
             referencedColumns: ["id"]
             referencedSchema: "member"
           },
@@ -170,7 +170,7 @@ export type Database = {
             foreignKeyName: "user_edit_logs_editor_user_id_fkey"
             columns: ["editor_user_id"]
             isOneToOne: false
-            referencedRelation: "users"
+            referencedRelation: "members"
             referencedColumns: ["id"]
             referencedSchema: "member"
           },
@@ -178,7 +178,7 @@ export type Database = {
             foreignKeyName: "user_edit_logs_target_user_id_fkey"
             columns: ["target_user_id"]
             isOneToOne: false
-            referencedRelation: "users"
+            referencedRelation: "members"
             referencedColumns: ["id"]
             referencedSchema: "member"
           },
@@ -208,7 +208,7 @@ export type Database = {
             foreignKeyName: "users_id_fkey"
             columns: ["id"]
             isOneToOne: true
-            referencedRelation: "users"
+            referencedRelation: "members"
             referencedColumns: ["id"]
             referencedSchema: "member"
           },
@@ -243,17 +243,14 @@ export type Database = {
       }
       member_team_relations: {
         Row: {
-          created_at: string
           member_id: string
           team_id: number
         }
         Insert: {
-          created_at?: string
           member_id: string
           team_id: number
         }
         Update: {
-          created_at?: string
           member_id?: string
           team_id?: number
         }
@@ -261,8 +258,8 @@ export type Database = {
           {
             foreignKeyName: "member_team_relations_member_id_fkey"
             columns: ["member_id"]
-            isOneToOne: false
-            referencedRelation: "users"
+            isOneToOne: true
+            referencedRelation: "members"
             referencedColumns: ["id"]
           },
           {
@@ -274,58 +271,7 @@ export type Database = {
           },
         ]
       }
-      team_leaders: {
-        Row: {
-          member_id: string
-          team_id: number
-        }
-        Insert: {
-          member_id: string
-          team_id: number
-        }
-        Update: {
-          member_id?: string
-          team_id?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "team_leaders_member_id_fkey"
-            columns: ["member_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "team_leaders_team_id_fkey"
-            columns: ["team_id"]
-            isOneToOne: false
-            referencedRelation: "teams"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      teams: {
-        Row: {
-          created_at: string
-          discord_role_id: string | null
-          id: number
-          name: string
-        }
-        Insert: {
-          created_at?: string
-          discord_role_id?: string | null
-          id?: number
-          name: string
-        }
-        Update: {
-          created_at?: string
-          discord_role_id?: string | null
-          id?: number
-          name?: string
-        }
-        Relationships: []
-      }
-      users: {
+      members: {
         Row: {
           created_at: string
           deleted_at: string | null
@@ -364,13 +310,61 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "users_id_fkey"
+            foreignKeyName: "members_id_fkey"
             columns: ["id"]
             isOneToOne: true
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
+      }
+      team_leaders: {
+        Row: {
+          member_id: string
+          team_id: number
+        }
+        Insert: {
+          member_id: string
+          team_id: number
+        }
+        Update: {
+          member_id?: string
+          team_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_leaders_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_leaders_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      teams: {
+        Row: {
+          discord_role_id: string | null
+          id: number
+          name: string
+        }
+        Insert: {
+          discord_role_id?: string | null
+          id?: number
+          name: string
+        }
+        Update: {
+          discord_role_id?: string | null
+          id?: number
+          name?: string
+        }
+        Relationships: []
       }
     }
     Views: {
