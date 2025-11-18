@@ -34,7 +34,7 @@ export default async function TeamStatusPage({ params }: { params: { id: string 
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle>エラー</AlertTitle>
                 <AlertDescription>
-                    指定された班が見つかりません。
+                    {error || '指定された班が見つかりません。'}
                      <Button variant="link" asChild><Link href="/dashboard">ダッシュボードに戻る</Link></Button>
                 </AlertDescription>
             </Alert>
@@ -124,4 +124,9 @@ export default async function TeamStatusPage({ params }: { params: { id: string 
                                 )}
                             </div>
                         )
-                    
+                    })}
+                </CardContent>
+            </Card>
+        </div>
+    );
+}

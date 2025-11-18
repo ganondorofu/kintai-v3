@@ -8,6 +8,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { randomUUID } from 'crypto';
 import { differenceInSeconds, startOfDay, endOfDay, subDays, format, startOfMonth, endOfMonth } from 'date-fns';
+import { fetchAllMemberNames, fetchSingleMemberName } from '@/lib/name-api';
 
 type MemberUser = Tables<'members', 'users'>;
 type AttendanceUser = Tables<'attendance', 'users'>;
@@ -23,7 +24,7 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
   const { data: attendanceUser, error: attendanceUserError } = await supabase
     .schema('attendance')
     .from('users')
-    .select('id, members_users:users(display_name)')
+    .select('id, user_profile:members_users(display_name)')
     .eq('card_id', normalizedCardId)
     .single();
 
@@ -33,7 +34,7 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
 
   const userId = attendanceUser.id;
   // @ts-ignore
-  const userDisplayName = attendanceUser.members_users?.display_name || '名無しさん';
+  const userDisplayName = attendanceUser.user_profile?.display_name || '名無しさん';
 
   const { data: lastAttendance, error: lastAttendanceError } = await supabase
     .schema('attendance')
@@ -127,13 +128,13 @@ export async function getTempRegistration(token: string) {
 
 export async function completeRegistration(formData: FormData) {
   const token = formData.get('token') as string;
-  const displayName = formData.get('displayName') as string;
+  // displayName is now fetched from API
   const generation = Number(formData.get('generation'));
   const teamId = Number(formData.get('teamId'));
   const studentNumber = formData.get('studentNumber') as string;
   const status = Number(formData.get('status'));
 
-  if (!token || !displayName || !generation || !teamId || !studentNumber || !status) {
+  if (!token || !generation || !teamId || !studentNumber || status === null) {
     return redirect(`/register/${token}?error=Missing form data`);
   }
 
@@ -144,7 +145,8 @@ export async function completeRegistration(formData: FormData) {
   if (!user || !user.user_metadata.provider_id) {
     return redirect(`/register/${token}?error=Not authenticated`);
   }
-  
+  const discordId = user.user_metadata.provider_id;
+
   const { data: tempReg, error: tempRegError } = await adminSupabase
     .schema('attendance')
     .from('temp_registrations')
@@ -162,11 +164,17 @@ export async function completeRegistration(formData: FormData) {
     return redirect(`/register/${token}?error=Session expired`);
   }
 
+  // Fetch real name from API
+  const realName = await fetchSingleMemberName(discordId);
+  if (!realName) {
+      return redirect(`/register/${token}?error=Failed to fetch user name from API. Make sure user is in the Discord server.`);
+  }
+
   // 1. Create user in `members.users`
   const memberData: TablesInsert<'members', 'users'> = {
     id: user.id,
-    display_name: `${displayName}#${Math.floor(1000 + Math.random() * 9000)}`,
-    discord_id: user.user_metadata.provider_id,
+    display_name: realName,
+    discord_id: discordId,
     generation: generation,
     student_number: studentNumber,
     status: status,
@@ -177,10 +185,15 @@ export async function completeRegistration(formData: FormData) {
 
   if (insertMemberError) {
     console.error("Error inserting member:", insertMemberError);
-    if(insertMemberError.code === '23505') {
-       return redirect(`/register/${token}?error=User already exists or display name is taken.`);
+    if(insertMemberError.code === '23505') { // unique constraint violation
+       // Try to update existing user that might not be fully registered
+       const { error: updateError } = await adminSupabase.schema('members').from('users').update(memberData).eq('id', user.id);
+       if(updateError) {
+          return redirect(`/register/${token}?error=User already exists and failed to update: ${updateError.message}`);
+       }
+    } else {
+      return redirect(`/register/${token}?error=${insertMemberError.message}`);
     }
-    return redirect(`/register/${token}?error=${insertMemberError.message}`);
   }
 
   // 2. Create user in `attendance.users`
@@ -188,18 +201,17 @@ export async function completeRegistration(formData: FormData) {
       id: user.id,
       card_id: tempReg.card_id
   }
-  const { error: insertAttendanceUserError } = await adminSupabase.schema('attendance').from('users').insert(attendanceUserData);
+  const { error: insertAttendanceUserError } = await adminSupabase.schema('attendance').from('users').upsert(attendanceUserData, { onConflict: 'id' });
   if (insertAttendanceUserError) {
       console.error("Error creating attendance user link:", insertAttendanceUserError);
-      // Rollback member creation? For now, just show error.
       return redirect(`/register/${token}?error=Failed to link card to user.`);
   }
 
   // 3. Link user to team in `members.member_team_relations`
-  const { error: insertTeamRelError } = await adminSupabase.schema('members').from('member_team_relations').insert({
+  const { error: insertTeamRelError } = await adminSupabase.schema('members').from('member_team_relations').upsert({
       member_id: user.id,
       team_id: teamId
-  });
+  }, { onConflict: 'member_id' });
   if (insertTeamRelError) {
       console.error("Error creating team relation:", insertTeamRelError);
        return redirect(`/register/${token}?error=Failed to add user to team.`);
@@ -431,43 +443,14 @@ export async function calculateTotalActivityTime(userId: string, days: number): 
 export async function getAllUsersWithStatus() {
     const supabase = createSupabaseAdminClient();
     const { data: users, error: usersError } = await supabase
-        .schema('members')
-        .from('users')
-        .select(`
-            *,
-            attendance_user:attendance_users(card_id),
-            teams:member_team_relations(teams(id, name))
-        `);
+        .from('users_with_latest_attendance')
+        .select('*');
 
-    if (usersError) return { data: [], error: usersError };
-
-    const userIds = users.map(u => u.id);
-    const { data: latestAttendances, error: attendanceError } = await supabase
-        .schema('attendance')
-        .from('attendances')
-        .select('user_id, type')
-        .in('user_id', userIds)
-        .order('timestamp', { ascending: false });
-    
-    if (attendanceError) return { data: users, error: null }; // Return users without status on error
-
-    const statusMap = new Map<string, string>();
-    if (latestAttendances) {
-        latestAttendances.forEach(att => {
-            if (!statusMap.has(att.user_id)) {
-                statusMap.set(att.user_id, att.type);
-            }
-        });
+    if (usersError) {
+        console.error('Error fetching users with status:', usersError);
+        return { data: [], error: usersError };
     }
-
-    const usersWithStatus = users.map(u => ({
-        ...u,
-        card_id: u.attendance_user?.[0]?.card_id || null,
-        teams: u.teams.map(t => t.teams)[0] || null, // Assuming one team for now
-        status: statusMap.get(u.id) || 'out'
-    }));
-    
-    return { data: usersWithStatus, error: null };
+    return { data: users, error: null };
 }
 
 export async function getAllTeams() {
@@ -484,19 +467,16 @@ export async function getTeamsWithMemberStatus() {
     if (usersError) return teams.map(t => ({ ...t, current: 0, total: 0 }));
     
     const userIds = users.map(u => u.member_id);
-     const { data: latestAttendances, error: attendanceError } = await supabase
-        .schema('attendance')
-        .from('attendances')
-        .select('user_id, type')
-        .in('user_id', userIds)
-        .order('timestamp', { ascending: false });
+
+    // This is not efficient, but get_currently_in_user_ids is gone.
+    // Let's get latest attendance for all users.
+    const { data: latestAttendances, error: attendanceError } = await supabase
+        .rpc('get_latest_attendance_for_users', { user_ids: userIds });
 
     const statusMap = new Map<string, string>();
     if (latestAttendances) {
-        latestAttendances.forEach(att => {
-            if (!statusMap.has(att.user_id)) {
-                statusMap.set(att.user_id, att.type);
-            }
+        (latestAttendances as any[]).forEach(att => {
+            statusMap.set(att.user_id, att.type);
         });
     }
 
@@ -536,7 +516,12 @@ export async function updateUser(userId: string, data: Partial<MemberUser & { ca
     
     if (team_id) {
          const { error: teamError } = await supabase.schema('members').from('member_team_relations').update({ team_id }).eq('member_id', userId);
-         if(teamError) return { success: false, message: teamError.message };
+         if(teamError) {
+             const { error: insertError } = await supabase.schema('members').from('member_team_relations').insert({ member_id: userId, team_id });
+             if (insertError) {
+                return { success: false, message: `Failed to update or insert team relation: ${teamError.message} & ${insertError.message}` };
+             }
+         }
     }
     
     revalidatePath('/admin');
@@ -639,9 +624,8 @@ export async function forceToggleAttendance(userId: string) {
 }
 
 export async function getTeamWithMembersStatus(teamId: number) {
-    const supabase = createSupabaseServerClient();
-    
-    const { data: { user } } = await supabase.auth.getUser();
+    const supabase = createSupabaseAdminClient();
+    const { data: { user } } = await createSupabaseServerClient().auth.getUser();
     if (!user) return { team: null, members: [], stats: null, error: 'Not authenticated' };
     
     const { data: profile } = await supabase.schema('members').from('users').select('is_admin, member_team_relations!inner(team_id)').eq('id', user.id).single();
@@ -651,60 +635,35 @@ export async function getTeamWithMembersStatus(teamId: number) {
     }
 
     const { data: team, error: teamError } = await supabase.schema('members').from('teams').select('*').eq('id', teamId).single();
-    if(teamError || !team) return { team: null, members: [], stats: null, error: teamError?.message || 'Team not found' };
+    if(teamError || !team) return { team: null, members: [], stats: null, error: teamError?.message };
 
-    const { data: members, error: membersError } = await supabase
-      .schema('members')
-      .from('users')
-      .select(`
-        id,
-        display_name,
-        generation
-      `)
-      .in('id', (await supabase.schema('members').from('member_team_relations').select('member_id').eq('team_id', teamId)).data?.map(m => m.member_id) || []);
-
-    if (membersError) {
+    const { data, error: membersError } = await supabase
+        .from('users_with_latest_attendance_and_team')
+        .select(`
+            id,
+            display_name,
+            generation,
+            status,
+            latest_timestamp
+        `)
+        .eq('team_id', teamId);
+    
+    if (membersError || !data) {
         console.error("Error fetching team members with status:", membersError);
-        return { team, members: [], stats: null, error: membersError.message };
+        return { team, members: [], stats: null, error: membersError?.message || 'Failed to fetch members' };
     }
 
-    const memberIds = members.map(m => m.id);
-    const { data: latestAttendances, error: attendanceError } = await supabase
-        .schema('attendance')
-        .from('attendances')
-        .select('user_id, type, timestamp')
-        .in('user_id', memberIds)
-        .order('timestamp', { ascending: false });
-
-    if(attendanceError) {
-        console.error("Error fetching latest attendances:", attendanceError);
-        return { team, members: [], stats: null, error: attendanceError.message };
-    }
-
-    const statusMap = new Map<string, { type: 'in' | 'out', timestamp: string | null }>();
-    if (latestAttendances) {
-        latestAttendances.forEach(att => {
-            if (!statusMap.has(att.user_id)) {
-                statusMap.set(att.user_id, { type: att.type as 'in' | 'out', timestamp: att.timestamp });
-            }
-        });
-    }
-
-    const membersWithStatus = members.map(member => {
-        const latest = statusMap.get(member.id);
-        return {
-            id: member.id,
-            display_name: member.display_name,
-            generation: member.generation,
-            discord_id: '', // This is not needed on this page, and expensive to fetch
-            status: latest?.type || 'out',
-            timestamp: latest?.timestamp || null,
-        }
-    });
+    const members = (data as any[]).map(m => ({
+        id: m.id,
+        display_name: m.display_name,
+        generation: m.generation,
+        status: m.status || 'out',
+        timestamp: m.latest_timestamp || null,
+    }));
     
     const stats = await getTeamStats(teamId);
 
-    return { team, members: membersWithStatus.sort((a,b) => b.generation - a.generation || a.display_name.localeCompare(b.display_name)), stats: stats };
+    return { team, members: members.sort((a,b) => b.generation - a.generation || a.display_name.localeCompare(b.display_name)), stats: stats, error: null };
 }
 
 
@@ -866,4 +825,52 @@ export async function deleteTempRegistration(id: string) {
     if(error) return { success: false, message: error.message };
     revalidatePath('/admin');
     return { success: true, message: '仮登録を削除しました。' };
+}
+
+export async function updateAllUserDisplayNames(): Promise<{ success: boolean, message: string, count: number }> {
+    const supabase = createSupabaseAdminClient();
+
+    const { data: users, error: usersError } = await supabase
+        .schema('members')
+        .from('users')
+        .select('id, discord_id')
+        .not('discord_id', 'eq', 'anonymous_admin');
+
+    if (usersError) {
+        return { success: false, message: `ユーザーの取得に失敗しました: ${usersError.message}`, count: 0 };
+    }
+
+    const allNames = await fetchAllMemberNames();
+    if (!allNames) {
+        return { success: false, message: 'APIからの名前リストの取得に失敗しました。', count: 0 };
+    }
+
+    const nameMap = new Map<string, string>(allNames.map(item => [item.uid, item.name]));
+    let updatedCount = 0;
+    const errors: string[] = [];
+
+    for (const user of users) {
+        const newName = nameMap.get(user.discord_id);
+        if (newName) {
+            const { error: updateError } = await supabase
+                .schema('members')
+                .from('users')
+                .update({ display_name: newName })
+                .eq('id', user.id);
+
+            if (updateError) {
+                errors.push(`ID ${user.id} の更新に失敗: ${updateError.message}`);
+            } else {
+                updatedCount++;
+            }
+        }
+    }
+
+    if (errors.length > 0) {
+        return { success: false, message: `いくつかの更新に失敗しました: ${errors.join(', ')}`, count: updatedCount };
+    }
+
+    revalidatePath('/admin/users');
+    revalidatePath('/dashboard');
+    return { success: true, message: `${updatedCount}人のユーザー表示名を正常に更新しました。`, count: updatedCount };
 }
