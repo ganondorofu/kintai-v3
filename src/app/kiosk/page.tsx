@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 
 type KioskState = 'idle' | 'input' | 'success' | 'error' | 'register' | 'qr' | 'processing' | 'loading';
 type AttendanceType = 'in' | 'out' | null;
-type Announcement = Database['public']['Tables']['announcements']['Row'] | null;
+type Announcement = Database['attendance']['Tables']['announcements']['Row'] | null;
 
 const AUTO_RESET_DELAY = 5000;
 
@@ -36,7 +36,7 @@ export default function KioskPage() {
 
   useEffect(() => {
     const fetchData = async () => {
-        const { data: initialAnnouncement } = await supabase.from('announcements').select('*').eq('is_current', true).limit(1).maybeSingle();
+        const { data: initialAnnouncement } = await supabase.schema('attendance').from('announcements').select('*').eq('is_current', true).limit(1).maybeSingle();
         setAnnouncement(initialAnnouncement);
         setKioskState('idle');
     };
@@ -162,7 +162,7 @@ export default function KioskPage() {
           'postgres_changes',
           { 
             event: 'UPDATE', 
-            schema: 'public', 
+            schema: 'attendance', 
             table: 'temp_registrations', 
             filter: `qr_token=eq.${qrToken}`
           },
@@ -179,9 +179,9 @@ export default function KioskPage() {
       .channel('kiosk-announcement-channel')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'announcements' },
+        { event: '*', schema: 'attendance', table: 'announcements' },
         async () => {
-          const { data } = await supabase.from('announcements').select('*').eq('is_current', true).limit(1).maybeSingle();
+          const { data } = await supabase.schema('attendance').from('announcements').select('*').eq('is_current', true).limit(1).maybeSingle();
           setAnnouncement(data);
         }
       ).subscribe();
