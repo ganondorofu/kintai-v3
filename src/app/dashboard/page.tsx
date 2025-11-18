@@ -10,9 +10,14 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge";
-import { format, formatDistanceToNow } from "date-fns";
+import { format, subDays } from "date-fns";
 import { ja } from "date-fns/locale";
 import AttendanceCalendar from "./_components/AttendanceCalendar";
+import ClientRelativeTime from "./_components/ClientRelativeTime";
+import { calculateTotalActivityTime } from "../actions";
+import AdminAttendanceCalendar from "./_components/AdminAttendanceCalendar";
+import { convertGenerationToGrade } from "@/lib/utils";
+import { redirect } from "next/navigation";
 
 export const dynamic = 'force-dynamic';
 
@@ -20,14 +25,59 @@ export default async function DashboardPage() {
     const supabase = await createSupabaseServerClient();
     const { data: { user } } = await supabase.auth.getUser();
 
-    const { data: profile } = await supabase.from('users').select('*, teams(name)').eq('id', user!.id).single();
-    const { data: attendances, error } = await supabase.from('attendances').select('*').eq('user_id', user!.id).order('timestamp', { ascending: false }).limit(5);
-    const { data: stats } = await supabase.from('attendances').select('type').eq('user_id', user!.id);
+    if (!user) {
+        redirect('/login');
+    }
+
+    const { data: profile } = await supabase
+        .schema('member')
+        .from('members')
+        .select(`
+            *,
+            teams:member_team_relations(teams(name))
+        `)
+        .eq('id', user!.id)
+        .single();
     
-    const totalIn = stats?.filter(s => s.type === 'in').length || 0;
-    const totalOut = stats?.filter(s => s.type === 'out').length || 0;
-    const attendanceRate = totalIn > 0 ? (totalIn / (totalIn + (totalIn - totalOut))) * 100 : 0;
+    if (!profile) {
+        redirect('/register/unregistered');
+    }
+
+    const thirtyDaysAgo = format(subDays(new Date(), 30), 'yyyy-MM-dd');
+    const userCreatedAtDate = format(new Date(profile!.created_at), 'yyyy-MM-dd');
+
+    const [attendancesResult, totalActivityTime] = await Promise.all([
+      supabase.schema('attendance').from('attendances').select('*').eq('user_id', user!.id).order('timestamp', { ascending: false }).limit(5),
+      calculateTotalActivityTime(user!.id, 30)
+    ]);
     
+    const { data: attendances } = attendancesResult;
+
+    const { data: distinctDates } = await supabase
+      .schema('attendance')
+      .from('attendances')
+      .select('date')
+      .eq('user_id', user!.id)
+      .eq('type', 'in')
+      .gte('date', thirtyDaysAgo);
+
+    const userAttendanceDays = distinctDates ? new Set(distinctDates.map(d => d.date)).size : 0;
+    
+    const { data: totalClubActivityDates } = await supabase
+      .schema('attendance')
+      .from('attendances')
+      .select('date')
+      .eq('type', 'in')
+      .gte('date', thirtyDaysAgo)
+      .gte('date', userCreatedAtDate); 
+    
+    const totalClubDays = totalClubActivityDates ? new Set(totalClubActivityDates.map(d => d.date)).size : 0;
+
+    const attendanceRate = totalClubDays > 0 ? (userAttendanceDays / totalClubDays) * 100 : 0;
+    
+    const isAdmin = profile?.is_admin;
+    const teamName = profile?.teams?.[0]?.teams?.name;
+
   return (
     <div className="space-y-6">
         <div className="flex justify-between items-start">
@@ -36,30 +86,33 @@ export default async function DashboardPage() {
                 <p className="text-muted-foreground">こんにちは, {profile?.display_name}さん！</p>
             </div>
             <div className="text-right">
-                <Badge variant="secondary">{profile?.teams?.name}</Badge>
-                <p className="text-sm text-muted-foreground">{profile?.generation}期生</p>
+                {teamName && <Badge variant="secondary">{teamName}</Badge>}
+                <p className="text-sm text-muted-foreground">{profile?.generation ? convertGenerationToGrade(profile.generation) : ''}</p>
             </div>
         </div>
       
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-2 lg:grid-cols-4">
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">総出勤日数</CardTitle>
+                    <CardTitle className="text-sm font-medium">出勤日数</CardTitle>
                     <CalendarIcon className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                    <div className="text-2xl font-bold">{totalIn}日</div>
+                    <div className="text-2xl font-bold">{userAttendanceDays}日</div>
+                     <p className="text-xs text-muted-foreground">
+                        過去30日間
+                    </p>
                 </CardContent>
             </Card>
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">総活動時間 (概算)</CardTitle>
+                    <CardTitle className="text-sm font-medium">活動時間 (概算)</CardTitle>
                     <Clock className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                    <div className="text-2xl font-bold">-- 時間</div>
+                    <div className="text-2xl font-bold">{totalActivityTime.toFixed(1)} 時間</div>
                     <p className="text-xs text-muted-foreground">
-                        現在この機能は開発中です
+                        過去30日間
                     </p>
                 </CardContent>
             </Card>
@@ -70,6 +123,9 @@ export default async function DashboardPage() {
                 </CardHeader>
                 <CardContent>
                     <div className="text-2xl font-bold">{attendanceRate.toFixed(1)}%</div>
+                    <p className="text-xs text-muted-foreground">
+                        活動日数(登録後): {totalClubDays}日
+                    </p>
                 </CardContent>
             </Card>
             <Card>
@@ -82,48 +138,50 @@ export default async function DashboardPage() {
                 </CardContent>
             </Card>
       </div>
-      <div className="grid gap-6 lg:grid-cols-2">
-      <Card>
-        <CardHeader>
-            <CardTitle>最近の出退勤記録</CardTitle>
-        </CardHeader>
-        <CardContent>
-            <Table>
-                <TableHeader>
-                    <TableRow>
-                    <TableHead>種別</TableHead>
-                    <TableHead>日時</TableHead>
-                    <TableHead>相対時間</TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    {attendances && attendances.length > 0 ? attendances.map((att) => (
-                        <TableRow key={att.id}>
-                            <TableCell>
-                                <Badge variant={att.type === 'in' ? 'default' : 'secondary'}>
-                                    {att.type === 'in' ? '出勤' : '退勤'}
-                                </Badge>
-                            </TableCell>
-                            <TableCell>{format(new Date(att.timestamp), 'yyyy/MM/dd HH:mm:ss', {locale: ja})}</TableCell>
-                            <TableCell>{formatDistanceToNow(new Date(att.timestamp), { addSuffix: true, locale: ja })}</TableCell>
-                        </TableRow>
-                    )) : (
-                        <TableRow>
-                            <TableCell colSpan={3} className="text-center">記録がありません。</TableCell>
-                        </TableRow>
-                    )}
-                </TableBody>
-            </Table>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>出勤カレンダー</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AttendanceCalendar userId={user!.id} />
-        </CardContent>
-      </Card>
+      <div className="grid gap-6">
+        <div className="grid gap-6">
+            <Card>
+                <CardHeader>
+                    <CardTitle>最近の出退勤記録</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                            <TableHead>種別</TableHead>
+                            <TableHead>日時</TableHead>
+                            <TableHead>相対時間</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {attendances && attendances.length > 0 ? attendances.map((att) => (
+                                <TableRow key={att.id}>
+                                    <TableCell>
+                                        <Badge variant={att.type === 'in' ? 'default' : 'secondary'}>
+                                            {att.type === 'in' ? '出勤' : '退勤'}
+                                        </Badge>
+                                    </TableCell>
+                                    <TableCell>{format(new Date(att.timestamp), 'yyyy/MM/dd HH:mm:ss', {locale: ja})}</TableCell>
+                                    <TableCell><ClientRelativeTime date={att.timestamp} /></TableCell>
+                                </TableRow>
+                            )) : (
+                                <TableRow>
+                                    <TableCell colSpan={3} className="text-center">記録がありません。</TableCell>
+                                </TableRow>
+                            )}
+                        </TableBody>
+                    </Table>
+                </CardContent>
+            </Card>
+             <Card>
+                <CardHeader>
+                <CardTitle>出勤カレンダー</CardTitle>
+                </CardHeader>
+                <CardContent>
+                {isAdmin ? <AdminAttendanceCalendar /> : <AttendanceCalendar userId={user!.id} />}
+                </CardContent>
+            </Card>
+        </div>
       </div>
     </div>
   );

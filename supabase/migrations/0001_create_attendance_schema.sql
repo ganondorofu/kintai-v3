@@ -1,3 +1,4 @@
+
 -- Create the attendance schema
 create schema if not exists attendance;
 
@@ -13,13 +14,13 @@ alter default privileges in schema attendance grant all on sequences to postgres
 -- attendance.users TABLE
 --
 create table attendance.users (
-    id uuid not null default gen_random_uuid() primary key,
-    user_id uuid not null unique references member.members(supabase_auth_user_id) on delete cascade,
+    supabase_auth_user_id uuid not null primary key references member.members(supabase_auth_user_id) on delete cascade,
     card_id character varying not null unique,
     created_at timestamp with time zone not null default now(),
     updated_at timestamp with time zone not null default now()
 );
 alter table attendance.users enable row level security;
+
 create policy "Allow all access to service_role" on attendance.users for all to service_role using (true) with check (true);
 create policy "Allow read access to authenticated users" on attendance.users for select to authenticated using (true);
 
@@ -29,7 +30,8 @@ create policy "Allow read access to authenticated users" on attendance.users for
 --
 create table attendance.attendances (
     id uuid not null default gen_random_uuid() primary key,
-    user_id uuid not null references attendance.users (id) on delete cascade,
+    user_id uuid not null references attendance.users (supabase_auth_user_id) on delete cascade,
+    card_id character varying not null,
     "type" character varying not null,
     "timestamp" timestamp with time zone not null default now(),
     date date not null default (now() at time zone 'utc'::text),
@@ -38,8 +40,9 @@ create table attendance.attendances (
 alter table attendance.attendances enable row level security;
 create index idx_attendances_date_user on attendance.attendances using btree (date, user_id);
 create index idx_attendances_user_timestamp on attendance.attendances using btree (user_id, "timestamp");
+
 create policy "Allow all access to service_role" on attendance.attendances for all to service_role using (true) with check (true);
-create policy "Allow read access to user for their own records" on attendance.attendances for select to authenticated using ((select user_id from attendance.users where id = attendances.user_id) = auth.uid());
+create policy "Allow read access to user for their own records" on attendance.attendances for select to authenticated using ((select auth.uid()) = user_id);
 
 
 --
@@ -55,27 +58,13 @@ create table attendance.temp_registrations (
     created_at timestamp with time zone not null default now()
 );
 alter table attendance.temp_registrations enable row level security;
-create unique index temp_registrations_card_id on attendance.temp_registrations using btree (card_id, is_used, expires_at);
+
+create unique index temp_registrations_card_id_is_used_expires_at_idx on attendance.temp_registrations (card_id, is_used, expires_at);
 create unique index temp_registrations_qr_token_key on attendance.temp_registrations using btree (qr_token);
 create index idx_temp_registrations_expires on attendance.temp_registrations using btree (expires_at);
+
 create policy "Allow all access to service_role" on attendance.temp_registrations for all to service_role using (true) with check (true);
 create policy "Allow read access for all users" on attendance.temp_registrations for select using (true);
-
-
---
--- attendance.user_edit_logs TABLE
---
-create table attendance.user_edit_logs (
-    id uuid not null default gen_random_uuid() primary key,
-    target_user_id uuid not null references member.members(supabase_auth_user_id) on delete cascade,
-    editor_user_id uuid references member.members(supabase_auth_user_id) on delete set null,
-    field_name character varying not null,
-    old_value text,
-    new_value text,
-    created_at timestamp with time zone not null default now()
-);
-alter table attendance.user_edit_logs enable row level security;
-create policy "Allow all access to service_role" on attendance.user_edit_logs for all to service_role using (true) with check (true);
 
 
 --
@@ -89,3 +78,5 @@ create table attendance.daily_logout_logs (
 );
 alter table attendance.daily_logout_logs enable row level security;
 create policy "Allow all access to service_role" on attendance.daily_logout_logs for all to service_role using (true) with check (true);
+
+    
