@@ -55,7 +55,7 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
   const { error: insertError } = await supabase
     .schema('attendance')
     .from('attendances')
-    .insert({ user_id: userId, type: attendanceType });
+    .insert({ user_id: userId, type: attendanceType, card_id: normalizedCardId });
 
   if (insertError) {
     console.error('Attendance insert error:', insertError);
@@ -515,14 +515,14 @@ export async function forceLogoutAll() {
         return { success: false, message: `DBエラー: ${currentlyInError.message}` };
     }
     
-    const usersToLogOut = currentlyIn as string[];
+    const usersToLogOut = currentlyIn as {user_id: string, card_id: string}[];
 
     if (usersToLogOut.length === 0) {
         await supabase.schema('attendance').from('daily_logout_logs').insert({ affected_count: 0, status: 'success' });
         return { success: true, message: '現在活動中のユーザーはいません。', count: 0 };
     }
 
-    const attendanceRecords = usersToLogOut.map((userId: string) => ({ user_id: userId, type: 'out' as const }));
+    const attendanceRecords = usersToLogOut.map(user => ({ user_id: user.user_id, card_id: user.card_id, type: 'out' as const }));
     const { error: insertError } = await supabase.schema('attendance').from('attendances').insert(attendanceRecords);
 
     if (insertError) {
@@ -543,7 +543,7 @@ export async function forceToggleAttendance(userId: string) {
     const { data: attendanceUser, error: attUserError } = await supabase
         .schema('attendance')
         .from('users')
-        .select('supabase_auth_user_id')
+        .select('supabase_auth_user_id, card_id')
         .eq('supabase_auth_user_id', userId)
         .single();
     
@@ -566,7 +566,7 @@ export async function forceToggleAttendance(userId: string) {
 
     const newType = lastAttendance?.type === 'in' ? 'out' : 'in';
 
-    const { error: insertError } = await supabase.schema('attendance').from('attendances').insert({ user_id: attendanceUser.supabase_auth_user_id, type: newType });
+    const { error: insertError } = await supabase.schema('attendance').from('attendances').insert({ user_id: attendanceUser.supabase_auth_user_id, type: newType, card_id: attendanceUser.card_id });
     if(insertError) {
         return { success: false, message: insertError.message };
     }
@@ -801,3 +801,5 @@ export async function updateAllUserDisplayNames(): Promise<{ success: boolean, m
     revalidatePath('/dashboard');
     return { success: true, message: `${updatedCount}人のユーザー表示名を正常に更新しました。`, count: updatedCount };
 }
+
+    
