@@ -1,3 +1,4 @@
+
 'use server';
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import axios from 'axios';
@@ -62,3 +63,6 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/login?error=Discordとの通信中にエラーが発生しました。`);
   }
 }
+
+
+    
