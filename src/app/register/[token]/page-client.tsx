@@ -4,9 +4,6 @@ import { completeRegistration, signInWithDiscord } from '@/app/actions';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Icons } from '@/components/icons';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import type { Tables } from '@/lib/types';
@@ -27,46 +24,12 @@ function SubmitButton() {
     );
 }
 
-function RegisterForm({ token, teams }: { token: string, teams: any[] }) {
+function RegisterForm({ token }: { token: string }) {
   return (
     <form action={completeRegistration} className="space-y-4">
       <input type="hidden" name="token" value={token} />
-      <div className='text-sm text-muted-foreground'>
-        あなたのDiscordのニックネーム(本名)が表示名として自動登録されます。
-      </div>
-      <div>
-        <Label htmlFor="studentNumber">学籍番号</Label>
-        <Input id="studentNumber" name="studentNumber" placeholder="例: C2XXXXX" required />
-      </div>
-       <div>
-        <Label htmlFor="status">身分</Label>
-        <Select name="status" required>
-          <SelectTrigger>
-            <SelectValue placeholder="身分を選択してください" />
-          </SelectTrigger>
-          <SelectContent>
-             <SelectItem value="0">中学生</SelectItem>
-             <SelectItem value="1">高校生</SelectItem>
-             <SelectItem value="2">OB/OG</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <div>
-        <Label htmlFor="generation">期生</Label>
-        <Input id="generation" name="generation" type="number" placeholder="例: 9" required />
-      </div>
-      <div>
-        <Label htmlFor="teamId">班</Label>
-        <Select name="teamId" required>
-          <SelectTrigger>
-            <SelectValue placeholder="所属する班を選択してください" />
-          </SelectTrigger>
-          <SelectContent>
-            {teams.map((team) => (
-              <SelectItem key={team.id} value={String(team.id)}>{team.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+       <div className='text-sm text-muted-foreground text-center'>
+        ユーザー情報を確認しました。下のボタンを押して、このカードの登録を完了してください。
       </div>
       <SubmitButton />
     </form>
@@ -130,7 +93,7 @@ export default function RegisterPageClient({ token, tempReg, teams, session, ful
         );
     }
   
-    if (success === 'true' || (session?.user && fullProfile)) {
+    if (success === 'true' || (session?.user && fullProfile?.attendance_user)) {
         const cardId = fullProfile?.attendance_user?.card_id || tempReg.card_id;
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4">
@@ -201,7 +164,7 @@ export default function RegisterPageClient({ token, tempReg, teams, session, ful
                             </Button>
                         </form>
                     ) : (
-                        <RegisterForm token={token} teams={teams || []} />
+                        <RegisterForm token={token} />
                     )}
                 </CardContent>
             </Card>
