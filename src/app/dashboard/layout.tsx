@@ -12,12 +12,12 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Icons } from "@/components/icons";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Menu, Moon, Sun } from "lucide-react";
+import { Menu } from "lucide-react";
 import DashboardNav from "./_components/DashboardNav";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 async function UserProfile({ user }: { user: any }) {
-  const { data: profile } = await createSupabaseServerClient().schema('member').from('users').select('display_name').eq('id', user.id).single();
+  const { data: profile } = await createSupabaseServerClient().schema('member').from('members').select('display_name').eq('id', user.id).single();
   const initials = profile?.display_name?.charAt(0).toUpperCase() || 'U';
   
   return (
@@ -98,7 +98,7 @@ export default async function DashboardLayout({
     return redirect("/login");
   }
 
-  const { data: profile } = await supabase.schema('member').from('users').select('id, is_admin, member_team_relations(team_id)').eq('id', user.id).single();
+  const { data: profile } = await supabase.schema('member').from('members').select('id, is_admin, member_team_relations(team_id)').eq('id', user.id).single();
 
   if (!profile) {
     await supabase.auth.signOut();

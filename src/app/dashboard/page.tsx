@@ -31,7 +31,7 @@ export default async function DashboardPage() {
 
     const { data: profile } = await supabase
         .schema('member')
-        .from('users')
+        .from('members')
         .select(`
             *,
             teams:member_team_relations(teams(name))

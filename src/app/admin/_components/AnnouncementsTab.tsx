@@ -88,7 +88,8 @@ export default function AnnouncementsTab({
     if (currentAnnouncement) {
       result = await updateAnnouncement(currentAnnouncement.id, data);
     } else {
-      result = await createAnnouncement(data);
+      const { id: _, ...insertData } = data; // id cannot be in insert data
+      result = await createAnnouncement(insertData);
     }
 
     if (result.success) {

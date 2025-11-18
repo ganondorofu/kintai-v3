@@ -10,13 +10,13 @@ import { randomUUID } from 'crypto';
 import { differenceInSeconds, startOfDay, endOfDay, subDays, format, startOfMonth, endOfMonth } from 'date-fns';
 import { fetchAllMemberNames, fetchSingleMemberName } from '@/lib/name-api';
 
-type MemberUser = Tables<'member', 'users'>;
+type Member = Tables<'member', 'members'>;
 type AttendanceUser = Tables<'attendance', 'users'>;
 type Team = Tables<'member', 'teams'>;
 
-type UserWithTeam = MemberUser & { teams: Team[] | null };
+type UserWithTeam = Member & { teams: Team[] | null };
 
-export async function recordAttendance(cardId: string): Promise<{ success: boolean; message: string; user: MemberUser | null; type: 'in' | 'out' | null; }> {
+export async function recordAttendance(cardId: string): Promise<{ success: boolean; message: string; user: Member | null; type: 'in' | 'out' | null; }> {
   const supabase = createSupabaseAdminClient();
   
   const normalizedCardId = cardId.replace(/:/g, '').toLowerCase();
@@ -24,7 +24,7 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
   const { data: attendanceUser, error: attendanceUserError } = await supabase
     .schema('attendance')
     .from('users')
-    .select('id, user_profile:member_users(display_name)')
+    .select('id, user_profile:member_members(display_name)')
     .eq('card_id', normalizedCardId)
     .single();
 
@@ -66,7 +66,7 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
   return { 
     success: true, 
     message: attendanceType === 'in' ? '出勤しました' : '退勤しました',
-    user: { display_name: userDisplayName } as MemberUser,
+    user: { display_name: userDisplayName } as Member,
     type: attendanceType,
   };
 }
@@ -170,8 +170,8 @@ export async function completeRegistration(formData: FormData) {
       return redirect(`/register/${token}?error=Failed to fetch user name from API. Make sure user is in the Discord server.`);
   }
 
-  // 1. Create user in `member.users`
-  const memberData: TablesInsert<'member', 'users'> = {
+  // 1. Create user in `member.members`
+  const memberData: TablesInsert<'member', 'members'> = {
     id: user.id,
     display_name: realName,
     discord_id: discordId,
@@ -181,13 +181,13 @@ export async function completeRegistration(formData: FormData) {
     is_admin: false,
   };
 
-  const { error: insertMemberError } = await adminSupabase.schema('member').from('users').insert(memberData);
+  const { error: insertMemberError } = await adminSupabase.schema('member').from('members').insert(memberData);
 
   if (insertMemberError) {
     console.error("Error inserting member:", insertMemberError);
     if(insertMemberError.code === '23505') { // unique constraint violation
        // Try to update existing user that might not be fully registered
-       const { error: updateError } = await adminSupabase.schema('member').from('users').update(memberData).eq('id', user.id);
+       const { error: updateError } = await adminSupabase.schema('member').from('members').update(memberData).eq('id', user.id);
        if(updateError) {
           return redirect(`/register/${token}?error=User already exists and failed to update: ${updateError.message}`);
        }
@@ -281,9 +281,9 @@ export async function signInAsAnonymousAdmin() {
     }
 
     // Check if member profile exists
-    const { data: memberProfile } = await adminSupabase.schema('member').from('users').select('id').eq('id', authUser.id).single();
+    const { data: memberProfile } = await adminSupabase.schema('member').from('members').select('id').eq('id', authUser.id).single();
     if (!memberProfile) {
-        const { error: createMemberError } = await adminSupabase.schema('member').from('users').insert({
+        const { error: createMemberError } = await adminSupabase.schema('member').from('members').insert({
             id: authUser.id,
             display_name: '匿名管理者',
             discord_id: 'anonymous_admin',
@@ -464,7 +464,7 @@ export async function getTeamsWithMemberStatus() {
     if (teamsError) return [];
 
     const { data: users, error: usersError } = await supabase.schema('member').from('member_team_relations').select('member_id, team_id');
-    if (usersError) return teams.map(t => ({ ...t, current: 0, total: 0 }));
+    if (usersError || !users) return teams.map(t => ({ ...t, current: 0, total: 0 }));
     
     const userIds = users.map(u => u.member_id);
 
@@ -499,12 +499,12 @@ export async function getTeamsWithMemberStatus() {
 }
 
 
-export async function updateUser(userId: string, data: Partial<MemberUser & { card_id: string; team_id: number }>) {
+export async function updateUser(userId: string, data: Partial<Member & { card_id: string; team_id: number }>) {
     const supabase = createSupabaseAdminClient();
     const { card_id, team_id, ...memberData } = data;
 
     if (Object.keys(memberData).length > 0) {
-        const { error: memberError } = await supabase.schema('member').from('users').update(memberData).eq('id', userId);
+        const { error: memberError } = await supabase.schema('member').from('members').update(memberData).eq('id', userId);
         if(memberError) return { success: false, message: memberError.message };
     }
     
@@ -628,7 +628,7 @@ export async function getTeamWithMembersStatus(teamId: number) {
     const { data: { user } } = await createSupabaseServerClient().auth.getUser();
     if (!user) return { team: null, members: [], stats: null, error: 'Not authenticated' };
     
-    const { data: profile } = await supabase.schema('member').from('users').select('is_admin, member_team_relations!inner(team_id)').eq('id', user.id).single();
+    const { data: profile } = await supabase.schema('member').from('members').select('is_admin, member_team_relations!inner(team_id)').eq('id', user.id).single();
 
     if (!profile?.is_admin && !profile?.member_team_relations.some(rel => rel.team_id === teamId)) {
         return { team: null, members: [], stats: null, error: 'Access denied' };
@@ -643,7 +643,7 @@ export async function getTeamWithMembersStatus(teamId: number) {
             id,
             display_name,
             generation,
-            status,
+            latest_attendance_type,
             latest_timestamp
         `)
         .eq('team_id', teamId);
@@ -657,8 +657,8 @@ export async function getTeamWithMembersStatus(teamId: number) {
         id: m.id,
         display_name: m.display_name,
         generation: m.generation,
-        status: m.status || 'out',
-        timestamp: m.latest_timestamp || null,
+        latest_attendance_type: m.latest_attendance_type || 'out',
+        latest_timestamp: m.latest_timestamp || null,
     }));
     
     const stats = await getTeamStats(teamId);
@@ -762,7 +762,7 @@ export async function getAllAnnouncements() {
     return supabase.schema('attendance').from('announcements').select('*, author:author_id(display_name)').order('created_at', { ascending: false });
 }
 
-export async function createAnnouncement(data: TablesInsert<'attendance', 'announcements'>) {
+export async function createAnnouncement(data: Omit<TablesInsert<'attendance', 'announcements'>, 'id'>) {
     const supabase = createSupabaseAdminClient();
     const { error } = await supabase.schema('attendance').from('announcements').insert(data);
     if(error) return { success: false, message: error.message };
@@ -832,12 +832,15 @@ export async function updateAllUserDisplayNames(): Promise<{ success: boolean, m
 
     const { data: users, error: usersError } = await supabase
         .schema('member')
-        .from('users')
+        .from('members')
         .select('id, discord_id')
         .not('discord_id', 'eq', 'anonymous_admin');
 
     if (usersError) {
         return { success: false, message: `ユーザーの取得に失敗しました: ${usersError.message}`, count: 0 };
+    }
+    if (!users) {
+        return { success: false, message: '更新対象のユーザーが見つかりません。', count: 0 };
     }
 
     const allNames = await fetchAllMemberNames();
@@ -854,7 +857,7 @@ export async function updateAllUserDisplayNames(): Promise<{ success: boolean, m
         if (newName) {
             const { error: updateError } = await supabase
                 .schema('member')
-                .from('users')
+                .from('members')
                 .update({ display_name: newName })
                 .eq('id', user.id);
 

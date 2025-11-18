@@ -52,11 +52,11 @@ type UserWithDetails = {
     team_id: number | null;
     generation: number;
     is_admin: boolean;
-    status: string;
+    latest_attendance_type: string | null;
     latest_timestamp: string | null;
     deleted_at: string | null;
     student_number: string | null;
-    user_status: number;
+    status: number;
 };
 
 
@@ -106,7 +106,6 @@ export default function UsersTab({ users: initialUsers, teams, currentUser }: Us
     const [editingUser, setEditingUser] = useState<UserWithDetails | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'display_name', direction: 'asc' });
-    const [users, setUsers] = useState(initialUsers);
     const [isToggling, startToggleTransition] = useTransition();
     const [isUpdatingNames, startUpdatingNamesTransition] = useTransition();
 
@@ -147,7 +146,7 @@ export default function UsersTab({ users: initialUsers, teams, currentUser }: Us
     };
 
     const sortedAndFilteredUsers = useMemo(() => {
-        let filtered = users.filter(user =>
+        let filtered = initialUsers.filter(user =>
             user.display_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
             (user.card_id && user.card_id.toLowerCase().includes(searchTerm.toLowerCase()))
         );
@@ -168,7 +167,7 @@ export default function UsersTab({ users: initialUsers, teams, currentUser }: Us
         });
         
         return filtered;
-    }, [users, searchTerm, sort]);
+    }, [initialUsers, searchTerm, sort]);
 
 
     const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -249,7 +248,7 @@ export default function UsersTab({ users: initialUsers, teams, currentUser }: Us
                         <SortableHeader sortKey="team_name" currentSort={sort} onSort={handleSort}>班</SortableHeader>
                         <SortableHeader sortKey="generation" currentSort={sort} onSort={handleSort}>学年/期生</SortableHeader>
                         <SortableHeader sortKey="is_admin" currentSort={sort} onSort={handleSort}>役割</SortableHeader>
-                        <SortableHeader sortKey="status" currentSort={sort} onSort={handleSort}>現在の状態</SortableHeader>
+                        <SortableHeader sortKey="latest_attendance_type" currentSort={sort} onSort={handleSort}>現在の状態</SortableHeader>
                         <SortableHeader sortKey="card_id" currentSort={sort} onSort={handleSort}>カードID</SortableHeader>
                         <SortableHeader sortKey="deleted_at" currentSort={sort} onSort={handleSort}>アカウント</SortableHeader>
                         <TableHead>アクション</TableHead>
@@ -265,7 +264,7 @@ export default function UsersTab({ users: initialUsers, teams, currentUser }: Us
                                 <Badge variant={user.is_admin ? "destructive" : "outline"}>{user.is_admin ? '管理者' : '部員'}</Badge>
                             </TableCell>
                              <TableCell>
-                                <Badge variant={user.status === 'in' ? 'default' : 'secondary'}>{user.status === 'in' ? '出勤中' : '退勤'}</Badge>
+                                <Badge variant={user.latest_attendance_type === 'in' ? 'default' : 'secondary'}>{user.latest_attendance_type === 'in' ? '出勤中' : '退勤'}</Badge>
                             </TableCell>
                             <TableCell className="font-mono">{user.card_id}</TableCell>
                              <TableCell>
@@ -273,7 +272,7 @@ export default function UsersTab({ users: initialUsers, teams, currentUser }: Us
                             </TableCell>
                             <TableCell className="space-x-2 flex items-center">
                                 <Button size="sm" variant="outline" onClick={() => handleForceToggle(user.id)} disabled={isToggling}>
-                                    {user.status === 'in' ? '強制退勤させる' : '強制出勤させる'}
+                                    {user.latest_attendance_type === 'in' ? '強制退勤させる' : '強制出勤させる'}
                                 </Button>
                                 <TooltipProvider>
                                     <Tooltip>
@@ -318,7 +317,7 @@ export default function UsersTab({ users: initialUsers, teams, currentUser }: Us
                             </div>
                              <div>
                                 <Label htmlFor="status">身分</Label>
-                                <Select name="status" defaultValue={String(editingUser?.user_status)}>
+                                <Select name="status" defaultValue={String(editingUser?.status)}>
                                     <SelectTrigger>
                                         <SelectValue placeholder="身分を選択" />
                                     </SelectTrigger>

@@ -73,7 +73,7 @@ function RegisterForm({ token, teams }: { token: string, teams: any[] }) {
   );
 }
 
-type FullProfile = Tables<'member', 'users'> & {
+type FullProfile = Tables<'member', 'members'> & {
     attendance_user: { card_id: string } | null,
     teams: { name: string } | null,
 };
