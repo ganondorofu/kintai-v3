@@ -1,8 +1,8 @@
 
 'use server';
-import { createSupabaseServerClient } from '@/lib/supabase/server'
-import axios from 'axios';
-import { NextResponse } from 'next/server'
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { fetchMemberStatus } from '@/lib/member-status-api';
+import { NextResponse } from 'next/server';
 
 export async function GET(request: Request) {
   const origin = process.env.NEXT_PUBLIC_APP_URL!;
@@ -22,47 +22,31 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/login?error=セッションの確立に失敗しました: ${error.message}`);
   }
 
-  if (!data.session) {
-    console.error('No session received from Supabase after code exchange.');
+  if (!data.session || !data.user) {
+    console.error('No session or user received from Supabase after code exchange.');
     return NextResponse.redirect(`${origin}/login?error=セッションの確立に失敗しました。`);
   }
-
-  const discordToken = data.session.provider_token;
-  const requiredServerId = process.env.DISCORD_SERVER_ID;
-
-  if (!requiredServerId) {
-    console.error('DISCORD_SERVER_ID is not set in environment variables.');
-    await supabase.auth.signOut();
-    return NextResponse.redirect(`${origin}/login?error=サーバーの設定に問題があります。(管理者に連絡してください)`);
+  
+  const discordUid = data.user.user_metadata.provider_id;
+  if (!discordUid) {
+      await supabase.auth.signOut();
+      return NextResponse.redirect(`${origin}/login?error=DiscordユーザーIDが取得できませんでした。`);
   }
 
-  if (!discordToken) {
-    await supabase.auth.signOut();
-    return NextResponse.redirect(`${origin}/login?error=Discordの認証トークンが見つかりませんでした。権限スコープを再確認してください。`);
+  const { data: memberStatus, error: apiError } = await fetchMemberStatus(discordUid);
+  
+  if (apiError) {
+      console.error('Error fetching member status from API:', apiError);
+      await supabase.auth.signOut();
+      return NextResponse.redirect(`${origin}/login?error=APIとの通信中にエラーが発生しました。`);
   }
 
-  try {
-    const response = await axios.get('https://discord.com/api/users/@me/guilds', {
-      headers: {
-        'Authorization': `Bearer ${discordToken}`,
-      },
-    });
-    
-    const guilds = response.data;
-    const isMember = guilds.some((guild: any) => guild.id === requiredServerId);
-
-    if (isMember) {
+  if (memberStatus && memberStatus.is_in_server) {
       return NextResponse.redirect(`${origin}${next}`);
-    } else {
+  } else {
       await supabase.auth.signOut();
       return NextResponse.redirect(`${origin}/login?error=指定されたDiscordサーバーのメンバーではありません。`);
-    }
-  } catch (e: any) {
-    console.error('Error communicating with Discord API:', e.response?.data || e.message);
-    await supabase.auth.signOut();
-    return NextResponse.redirect(`${origin}/login?error=Discordとの通信中にエラーが発生しました。`);
   }
 }
-
 
     
