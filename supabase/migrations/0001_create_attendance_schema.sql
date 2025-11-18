@@ -11,10 +11,9 @@ alter default privileges in schema attendance grant all on sequences to postgres
 
 --
 -- attendance.users TABLE
--- Links a user from the member schema to a card_id
 --
 create table attendance.users (
-    user_id uuid not null primary key references member.members(supabase_auth_user_id) on delete cascade,
+    supabase_auth_user_id uuid not null primary key references member.members(supabase_auth_user_id) on delete cascade,
     card_id character varying not null unique,
     created_at timestamp with time zone not null default now(),
     updated_at timestamp with time zone not null default now()
@@ -29,7 +28,7 @@ create policy "Allow read access to authenticated users" on attendance.users for
 --
 create table attendance.attendances (
     id uuid not null default gen_random_uuid() primary key,
-    user_id uuid not null references member.members (supabase_auth_user_id) on delete cascade,
+    user_id uuid not null references attendance.users (supabase_auth_user_id) on delete cascade,
     "type" character varying not null,
     "timestamp" timestamp with time zone not null default now(),
     date date not null default (now() at time zone 'utc'::text),

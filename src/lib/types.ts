@@ -40,9 +40,9 @@ export type Database = {
             foreignKeyName: "attendances_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
-            referencedRelation: "members"
+            referencedRelation: "users"
             referencedColumns: ["supabase_auth_user_id"]
-            referencedSchema: "member"
+            referencedSchema: "attendance"
           },
         ]
       }
@@ -101,25 +101,25 @@ export type Database = {
         Row: {
           card_id: string
           created_at: string
+          supabase_auth_user_id: string
           updated_at: string
-          user_id: string
         }
         Insert: {
           card_id: string
           created_at?: string
+          supabase_auth_user_id: string
           updated_at?: string
-          user_id: string
         }
         Update: {
           card_id?: string
           created_at?: string
+          supabase_auth_user_id?: string
           updated_at?: string
-          user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "attendance_users_user_id_fkey"
-            columns: ["user_id"]
+            foreignKeyName: "attendance_users_supabase_auth_user_id_fkey"
+            columns: ["supabase_auth_user_id"]
             isOneToOne: true
             referencedRelation: "members"
             referencedColumns: ["supabase_auth_user_id"]

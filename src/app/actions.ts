@@ -24,7 +24,7 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
   const { data: attendanceUser, error: attendanceUserError } = await supabase
     .schema('attendance')
     .from('users')
-    .select('user_id, member:member_members(display_name)')
+    .select('supabase_auth_user_id, member:member_members(display_name)')
     .eq('card_id', normalizedCardId)
     .single();
 
@@ -32,7 +32,7 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
     return { success: false, message: '未登録のカードです。', user: null, type: null };
   }
 
-  const userId = attendanceUser.user_id;
+  const userId = attendanceUser.supabase_auth_user_id;
   // @ts-ignore
   const userDisplayName = attendanceUser.member?.display_name || '名無しさん';
 
@@ -79,7 +79,7 @@ export async function createTempRegistration(cardId: string): Promise<{ success:
   const { data: existingUser, error: existingUserError } = await supabase
     .schema('attendance')
     .from('users')
-    .select('user_id')
+    .select('supabase_auth_user_id')
     .eq('card_id', normalizedCardId)
     .single();
 
@@ -122,7 +122,7 @@ export async function getTempRegistration(token: string) {
 
     if (!data.accessed_at) {
         const admin = createSupabaseAdminClient();
-        await admin.schema('attendance').from('temp_registrations').update({ accessed_at: new Date().toISOString() }).eq('id', data.id);
+        await admin.schema('attendance').from('temp_registregistrations').update({ accessed_at: new Date().toISOString() }).eq('id', data.id);
     }
 
     return data;
@@ -173,10 +173,10 @@ export async function completeRegistration(formData: FormData) {
   }
   
   const attendanceUserData: TablesInsert<'attendance', 'users'> = {
-      user_id: user.id,
+      supabase_auth_user_id: user.id,
       card_id: tempReg.card_id
   }
-  const { error: insertAttendanceUserError } = await adminSupabase.schema('attendance').from('users').upsert(attendanceUserData, { onConflict: 'user_id' });
+  const { error: insertAttendanceUserError } = await adminSupabase.schema('attendance').from('users').upsert(attendanceUserData, { onConflict: 'supabase_auth_user_id' });
   if (insertAttendanceUserError) {
       console.error("Error creating attendance user link:", insertAttendanceUserError);
       return redirect(`/register/${token}?error=Failed to link card to user.`);
@@ -259,10 +259,10 @@ export async function signInAsAnonymousAdmin() {
         }
     }
 
-    const { data: attendanceProfile } = await adminSupabase.schema('attendance').from('users').select('user_id').eq('user_id', authUserId).single();
+    const { data: attendanceProfile } = await adminSupabase.schema('attendance').from('users').select('supabase_auth_user_id').eq('supabase_auth_user_id', authUserId).single();
     if (!attendanceProfile) {
          const { error: createAttendanceUserError } = await adminSupabase.schema('attendance').from('users').insert({
-            user_id: authUserId,
+            supabase_auth_user_id: authUserId,
             card_id: `admin_${randomUUID().slice(0,8)}`,
         });
         if (createAttendanceUserError) {
@@ -434,12 +434,12 @@ export async function getTeamsWithMemberStatus() {
     const { data: attendanceUserIds, error: attendanceUsersError } = await supabase
         .schema('attendance')
         .from('users')
-        .select('user_id')
-        .in('user_id', userIds);
+        .select('supabase_auth_user_id')
+        .in('supabase_auth_user_id', userIds);
     
     if (attendanceUsersError) return [];
     
-    const userIdsWithCard = attendanceUserIds.map(u => u.user_id);
+    const userIdsWithCard = attendanceUserIds.map(u => u.supabase_auth_user_id);
 
 
     const { data: latestAttendances, error: attendanceError } = await supabase
@@ -543,8 +543,8 @@ export async function forceToggleAttendance(userId: string) {
     const { data: attendanceUser, error: attUserError } = await supabase
         .schema('attendance')
         .from('users')
-        .select('user_id')
-        .eq('user_id', userId)
+        .select('supabase_auth_user_id')
+        .eq('supabase_auth_user_id', userId)
         .single();
     
     if (attUserError || !attendanceUser) {
@@ -555,7 +555,7 @@ export async function forceToggleAttendance(userId: string) {
         .schema('attendance')
         .from('attendances')
         .select('type')
-        .eq('user_id', attendanceUser.user_id)
+        .eq('user_id', attendanceUser.supabase_auth_user_id)
         .order('timestamp', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -566,7 +566,7 @@ export async function forceToggleAttendance(userId: string) {
 
     const newType = lastAttendance?.type === 'in' ? 'out' : 'in';
 
-    const { error: insertError } = await supabase.schema('attendance').from('attendances').insert({ user_id: attendanceUser.user_id, type: newType });
+    const { error: insertError } = await supabase.schema('attendance').from('attendances').insert({ user_id: attendanceUser.supabase_auth_user_id, type: newType });
     if(insertError) {
         return { success: false, message: insertError.message };
     }
@@ -646,8 +646,8 @@ async function getTeamStats(teamId: number) {
       }
     }
 
-    const { data: attendanceUsers } = await supabase.schema('attendance').from('users').select('user_id').in('user_id', memberIds);
-    const attendanceUserIds = attendanceUsers?.map(u => u.user_id) || [];
+    const { data: attendanceUsers } = await supabase.schema('attendance').from('users').select('supabase_auth_user_id').in('supabase_auth_user_id', memberIds);
+    const attendanceUserIds = attendanceUsers?.map(u => u.supabase_auth_user_id) || [];
 
     const { data: todayAttendanceData, error: todayAttendanceError } = await supabase
         .schema('attendance')
@@ -685,8 +685,8 @@ export async function getMonthlyTeamAttendanceStats(teamId: number, days: number
     
     const memberIds = teamMembers.map(m => m.member_id);
 
-    const { data: attendanceUsers } = await supabase.schema('attendance').from('users').select('user_id').in('user_id', memberIds);
-    const attendanceUserIds = attendanceUsers?.map(u => u.user_id) || [];
+    const { data: attendanceUsers } = await supabase.schema('attendance').from('users').select('supabase_auth_user_id').in('supabase_auth_user_id', memberIds);
+    const attendanceUserIds = attendanceUsers?.map(u => u.supabase_auth_user_id) || [];
 
     if(attendanceUserIds.length === 0) return 0;
 
