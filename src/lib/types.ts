@@ -12,6 +12,7 @@ export type Database = {
     Tables: {
       attendances: {
         Row: {
+          card_id: string
           created_at: string
           date: string
           id: string
@@ -20,6 +21,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          card_id: string
           created_at?: string
           date?: string
           id?: string
@@ -28,6 +30,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          card_id?: string
           created_at?: string
           date?: string
           id?: string
@@ -42,7 +45,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["supabase_auth_user_id"]
-            referencedSchema: "attendance"
           },
         ]
       }
@@ -132,7 +134,33 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_currently_in_user_ids: {
+        Args: Record<PropertyKey, never>
+        Returns: string[]
+      }
+      get_latest_attendance_for_users: {
+        Args: {
+          user_ids: string[]
+        }
+        Returns: {
+          user_id: string
+          type: string
+          timestamp: string
+        }[]
+      }
+      get_monthly_attendance_summary: {
+        Args: {
+          start_date: string
+          end_date: string
+        }
+        Returns: {
+          date: string
+          team_id: string
+          team_name: string
+          generation: number
+          count: number
+        }[]
+      }
     }
     Enums: never
     CompositeTypes: never
@@ -156,14 +184,17 @@ export type Database = {
       }
       member_team_relations: {
         Row: {
+          created_at: string | null
           member_id: string
           team_id: string
         }
         Insert: {
+          created_at?: string | null
           member_id: string
           team_id: string
         }
         Update: {
+          created_at?: string | null
           member_id?: string
           team_id?: string
         }
@@ -255,7 +286,7 @@ export type Database = {
           {
             foreignKeyName: "team_leaders_team_id_fkey"
             columns: ["team_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "teams"
             referencedColumns: ["id"]
           },
@@ -295,6 +326,32 @@ export type Database = {
           student_number: string | null
           team_name: string | null
         }
+        Insert: {
+          card_id?: string | null
+          deleted_at?: string | null
+          display_name?: string | null
+          generation?: number | null
+          id?: string | null
+          is_admin?: boolean | null
+          latest_attendance_type?: string | null
+          latest_timestamp?: string | null
+          status?: number | null
+          student_number?: string | null
+          team_name?: string | null
+        }
+        Update: {
+          card_id?: string | null
+          deleted_at?: string | null
+          display_name?: string | null
+          generation?: number | null
+          id?: string | null
+          is_admin?: boolean | null
+          latest_attendance_type?: string | null
+          latest_timestamp?: string | null
+          status?: number | null
+          student_number?: string | null
+          team_name?: string | null
+        }
         Relationships: [
           {
             foreignKeyName: "fk_supabase_auth_user_id"
@@ -320,6 +377,34 @@ export type Database = {
           team_id: string | null
           team_name: string | null
         }
+        Insert: {
+          card_id?: string | null
+          deleted_at?: string | null
+          display_name?: string | null
+          generation?: number | null
+          id?: string | null
+          is_admin?: boolean | null
+          latest_attendance_type?: string | null
+          latest_timestamp?: string | null
+          status?: number | null
+          student_number?: string | null
+          team_id?: string | null
+          team_name?: string | null
+        }
+        Update: {
+          card_id?: string | null
+          deleted_at?: string | null
+          display_name?: string | null
+          generation?: number | null
+          id?: string | null
+          is_admin?: boolean | null
+          latest_attendance_type?: string | null
+          latest_timestamp?: string | null
+          status?: number | null
+          student_number?: string | null
+          team_id?: string | null
+          team_name?: string | null
+        }
         Relationships: [
           {
             foreignKeyName: "fk_supabase_auth_user_id"
@@ -332,33 +417,7 @@ export type Database = {
       }
     }
     Functions: {
-      get_currently_in_user_ids: {
-        Args: Record<PropertyKey, never>
-        Returns: string[]
-      }
-      get_latest_attendance_for_users: {
-        Args: {
-          user_ids: string[]
-        }
-        Returns: {
-          user_id: string
-          type: string
-          timestamp: string
-        }[]
-      }
-      get_monthly_attendance_summary: {
-        Args: {
-          start_date: string
-          end_date: string
-        }
-        Returns: {
-          date: string
-          team_id: string
-          team_name: string
-          generation: number
-          count: number
-        }[]
-      }
+      [_ in never]: never
     }
     Enums: never
     CompositeTypes: never
@@ -400,3 +459,5 @@ export type Enums<
   SchemaName extends PublicSchema,
   EnumName extends keyof Database[SchemaName]["Enums"]
 > = Database[SchemaName]["Enums"][EnumName]
+
+    
