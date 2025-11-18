@@ -24,7 +24,7 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
   const { data: attendanceUser, error: attendanceUserError } = await supabase
     .schema('attendance')
     .from('users')
-    .select('user_id, member:member_members(display_name)')
+    .select('id, member:member_members!user_id(display_name)')
     .eq('card_id', normalizedCardId)
     .single();
 
@@ -32,7 +32,7 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
     return { success: false, message: '未登録のカードです。', user: null, type: null };
   }
 
-  const userId = attendanceUser.user_id;
+  const userId = attendanceUser.id;
   // @ts-ignore
   const userDisplayName = attendanceUser.member?.display_name || '名無しさん';
 
@@ -79,7 +79,7 @@ export async function createTempRegistration(cardId: string): Promise<{ success:
   const { data: existingUser, error: existingUserError } = await supabase
     .schema('attendance')
     .from('users')
-    .select('user_id')
+    .select('id')
     .eq('card_id', normalizedCardId)
     .single();
 
@@ -92,12 +92,14 @@ export async function createTempRegistration(cardId: string): Promise<{ success:
     return { success: false, message: 'このカードは既に登録されています。' };
   }
 
+  // Find and delete previous incomplete registrations for this card
+  await supabase.schema('attendance').from('temp_registrations').delete().match({ card_id: normalizedCardId, is_used: false });
+
   const token = `qr_${randomUUID()}`;
   const expires_at = new Date(Date.now() + 30 * 60 * 1000).toISOString();
   
-  const { error } = await supabase.schema('attendance').from('temp_registrations').upsert(
-    { card_id: normalizedCardId, qr_token: token, expires_at: expires_at, is_used: false },
-    { onConflict: 'card_id', ignoreDuplicates: false }
+  const { error } = await supabase.schema('attendance').from('temp_registrations').insert(
+    { card_id: normalizedCardId, qr_token: token, expires_at: expires_at, is_used: false }
   );
   
   if (error) {
@@ -226,6 +228,7 @@ export async function signInAsAnonymousAdmin() {
     }
 
     let authUser = users.find(u => u.email === email);
+    let authUserId: string;
 
     if (!authUser) {
         const { data: newAuthUserData, error: createAuthUserError } = await adminSupabase.auth.admin.createUser({
@@ -241,17 +244,16 @@ export async function signInAsAnonymousAdmin() {
         authUser = newAuthUserData.user;
     }
     
-    if (!authUser) {
-         return redirect('/login?error=Could not create or find anonymous admin user.');
-    }
+    authUserId = authUser.id;
 
     // Check if member profile exists
-    const { data: memberProfile } = await adminSupabase.schema('member').from('members').select('supabase_auth_user_id').eq('supabase_auth_user_id', authUser.id).single();
+    const { data: memberProfile } = await adminSupabase.schema('member').from('members').select('supabase_auth_user_id').eq('supabase_auth_user_id', authUserId).single();
     if (!memberProfile) {
+        const newDisplayName = '匿名管理者';
         const { error: createMemberError } = await adminSupabase.schema('member').from('members').insert({
-            supabase_auth_user_id: authUser.id,
-            display_name: '匿名管理者',
-            discord_uid: 'anonymous_admin',
+            supabase_auth_user_id: authUserId,
+            display_name: newDisplayName,
+            discord_uid: `anonymous_admin_${randomUUID().slice(0,8)}`,
             generation: 0,
             status: 2,
             is_admin: true,
@@ -262,10 +264,10 @@ export async function signInAsAnonymousAdmin() {
     }
 
     // Check if attendance profile exists
-    const { data: attendanceProfile } = await adminSupabase.schema('attendance').from('users').select('user_id').eq('user_id', authUser.id).single();
+    const { data: attendanceProfile } = await adminSupabase.schema('attendance').from('users').select('user_id').eq('user_id', authUserId).single();
     if (!attendanceProfile) {
          const { error: createAttendanceUserError } = await adminSupabase.schema('attendance').from('users').insert({
-            user_id: authUser.id,
+            user_id: authUserId,
             card_id: `admin_${randomUUID().slice(0,8)}`,
         });
         if (createAttendanceUserError) {
@@ -300,12 +302,21 @@ export async function getMonthlyAttendance(userId: string, month: Date) {
   const supabase = createSupabaseServerClient();
   const start = startOfMonth(month);
   const end = endOfMonth(month);
+
+  const { data: attendanceUserId, error: attendanceUserError } = await supabase
+    .schema('attendance')
+    .from('users')
+    .select('id')
+    .eq('user_id', userId)
+    .single();
+
+  if (attendanceUserError || !attendanceUserId) return [];
   
   const { data, error } = await supabase
     .schema('attendance')
     .from('attendances')
     .select('date, type')
-    .eq('user_id', userId)
+    .eq('user_id', attendanceUserId.id)
     .gte('date', format(start, 'yyyy-MM-dd'))
     .lte('date', format(end, 'yyyy-MM-dd'))
     .order('timestamp', { ascending: true });
@@ -317,8 +328,8 @@ export async function getMonthlyAttendance(userId: string, month: Date) {
 
   const dailyStatus: Record<string, 'in' | 'out' | 'mixed'> = {};
   data.forEach(att => {
-    const date = att.date;
-    dailyStatus[date] = att.type as 'in' | 'out';
+    if (!att.date) return;
+    dailyStatus[att.date] = att.type as 'in' | 'out';
   });
 
   return Object.keys(dailyStatus).map(date => ({
@@ -333,7 +344,6 @@ export async function getMonthlyAttendanceSummary(month: Date) {
   const end = format(endOfMonth(month), 'yyyy-MM-dd');
 
   const { data, error } = await supabase.rpc('get_monthly_attendance_summary', { start_date: start, end_date: end });
-
 
   if (error) {
     console.error('Error fetching monthly attendance summary:', error);
@@ -350,7 +360,7 @@ export async function getMonthlyAttendanceSummary(month: Date) {
   if (data) {
     for (const record of data) {
         const { date, team_id, team_name, generation, count } = record;
-        if (!date || !team_id || !team_name) continue;
+        if (!date || !team_id || !team_name || count === null) continue;
 
         const dateKey = format(new Date(date), 'yyyy-MM-dd');
 
@@ -364,7 +374,9 @@ export async function getMonthlyAttendanceSummary(month: Date) {
         
         summary[dateKey].total += count;
         summary[dateKey].byTeam[team_id].total += count;
-        summary[dateKey].byTeam[team_id].byGeneration[generation] = (summary[dateKey].byTeam[team_id].byGeneration[generation] || 0) + count;
+        if(generation !== null) {
+          summary[dateKey].byTeam[team_id].byGeneration[generation] = (summary[dateKey].byTeam[team_id].byGeneration[generation] || 0) + count;
+        }
     }
   }
   return summary;
@@ -375,11 +387,20 @@ export async function calculateTotalActivityTime(userId: string, days: number): 
   const supabase = createSupabaseServerClient();
   const startDate = subDays(new Date(), days).toISOString();
 
+  const { data: attendanceUserId, error: attendanceUserError } = await supabase
+    .schema('attendance')
+    .from('users')
+    .select('id')
+    .eq('user_id', userId)
+    .single();
+
+  if (attendanceUserError || !attendanceUserId) return 0;
+
   const { data: attendances, error } = await supabase
     .schema('attendance')
     .from('attendances')
     .select('type, timestamp')
-    .eq('user_id', userId)
+    .eq('user_id', attendanceUserId.id)
     .gte('timestamp', startDate)
     .order('timestamp', { ascending: true });
 
@@ -428,15 +449,24 @@ export async function getTeamsWithMemberStatus() {
     const { data: teams, error: teamsError } = await supabase.schema('member').from('teams').select('id, name').order('name');
     if (teamsError) return [];
 
-    const { data: users, error: usersError } = await supabase.schema('member').from('member_team_relations').select('member_id, team_id');
-    if (usersError || !users) return teams.map(t => ({ ...t, current: 0, total: 0 }));
+    const { data: memberTeamRelations, error: usersError } = await supabase.schema('member').from('member_team_relations').select('member_id, team_id');
+    if (usersError || !memberTeamRelations) return teams.map(t => ({ ...t, current: 0, total: 0 }));
     
-    const userIds = users.map(u => u.member_id);
+    const userIds = memberTeamRelations.map(u => u.member_id);
 
-    // This is not efficient, but get_currently_in_user_ids is gone.
-    // Let's get latest attendance for all users.
+    const { data: attendanceUsers, error: attendanceUsersError } = await supabase
+        .schema('attendance')
+        .from('users')
+        .select('id, user_id')
+        .in('user_id', userIds);
+    
+    if (attendanceUsersError) return [];
+    const attendanceUserIdMap = new Map(attendanceUsers.map(u => [u.user_id, u.id]));
+    const attendanceUserIds = attendanceUsers.map(u => u.id);
+
+
     const { data: latestAttendances, error: attendanceError } = await supabase
-        .rpc('get_latest_attendance_for_users', { user_ids: userIds });
+        .rpc('get_latest_attendance_for_users', { user_ids: attendanceUserIds });
 
     const statusMap = new Map<string, string>();
     if (latestAttendances) {
@@ -445,14 +475,16 @@ export async function getTeamsWithMemberStatus() {
         });
     }
 
-    const memberStatusByTeam = users.reduce((acc, user) => {
-        if (!user.team_id) return acc;
-        if (!acc[user.team_id]) {
-            acc[user.team_id] = { current: 0, total: 0 };
+    const memberStatusByTeam = memberTeamRelations.reduce((acc, relation) => {
+        if (!relation.team_id) return acc;
+        if (!acc[relation.team_id]) {
+            acc[relation.team_id] = { current: 0, total: 0 };
         }
-        acc[user.team_id].total++;
-        if (statusMap.get(user.member_id) === 'in') {
-            acc[user.team_id].current++;
+        acc[relation.team_id].total++;
+
+        const attendanceUserId = attendanceUserIdMap.get(relation.member_id);
+        if (attendanceUserId && statusMap.get(attendanceUserId) === 'in') {
+            acc[relation.team_id].current++;
         }
         return acc;
     }, {} as Record<string, { current: number; total: number }>);
@@ -533,11 +565,22 @@ export async function forceLogoutAll() {
 export async function forceToggleAttendance(userId: string) {
     const supabase = createSupabaseAdminClient();
 
+    const { data: attendanceUser, error: attUserError } = await supabase
+        .schema('attendance')
+        .from('users')
+        .select('id')
+        .eq('user_id', userId)
+        .single();
+    
+    if (attUserError || !attendanceUser) {
+        return { success: false, message: '勤怠ユーザーが見つかりません。' };
+    }
+
     const { data: lastAttendance, error: lastAttendanceError } = await supabase
         .schema('attendance')
         .from('attendances')
         .select('type')
-        .eq('user_id', userId)
+        .eq('user_id', attendanceUser.id)
         .order('timestamp', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -548,7 +591,7 @@ export async function forceToggleAttendance(userId: string) {
 
     const newType = lastAttendance?.type === 'in' ? 'out' : 'in';
 
-    const { error: insertError } = await supabase.schema('attendance').from('attendances').insert({ user_id: userId, type: newType });
+    const { error: insertError } = await supabase.schema('attendance').from('attendances').insert({ user_id: attendanceUser.id, type: newType });
     if(insertError) {
         return { success: false, message: insertError.message };
     }
@@ -616,8 +659,20 @@ async function getTeamStats(teamId: string) {
 
     if (totalMembersError) return null;
     
-    const { data: teamMemberIds } = await supabase.schema('member').from('member_team_relations').select('member_id').eq('team_id', teamId);
-    const memberIds = teamMemberIds?.map(m => m.member_id) || [];
+    const { data: teamMemberRelations } = await supabase.schema('member').from('member_team_relations').select('member_id').eq('team_id', teamId);
+    const memberIds = teamMemberRelations?.map(m => m.member_id) || [];
+    
+    if (memberIds.length === 0) {
+      return {
+        totalMembers: 0,
+        todayAttendees: 0,
+        todayAttendanceRate: 0,
+        averageAttendanceRate30d: 0,
+      }
+    }
+
+    const { data: attendanceUsers } = await supabase.schema('attendance').from('users').select('id').in('user_id', memberIds);
+    const attendanceUserIds = attendanceUsers?.map(u => u.id) || [];
 
     const { data: todayAttendanceData, error: todayAttendanceError } = await supabase
         .schema('attendance')
@@ -626,7 +681,7 @@ async function getTeamStats(teamId: string) {
         .eq('type', 'in')
         .gte('timestamp', startOfDay(today).toISOString())
         .lte('timestamp', endOfDay(today).toISOString())
-        .in('user_id', memberIds);
+        .in('user_id', attendanceUserIds);
     
     const uniqueTodayAttendees = todayAttendanceData ? new Set(todayAttendanceData.map(d => d.user_id)).size : 0;
     
@@ -655,6 +710,11 @@ export async function getMonthlyTeamAttendanceStats(teamId: string, days: number
     
     const memberIds = teamMembers.map(m => m.member_id);
 
+    const { data: attendanceUsers } = await supabase.schema('attendance').from('users').select('id').in('user_id', memberIds);
+    const attendanceUserIds = attendanceUsers?.map(u => u.id) || [];
+
+    if(attendanceUserIds.length === 0) return 0;
+
     const startDate = format(subDays(new Date(), days), 'yyyy-MM-dd');
     const endDate = format(new Date(), 'yyyy-MM-dd');
 
@@ -672,14 +732,15 @@ export async function getMonthlyTeamAttendanceStats(teamId: string, days: number
         .schema('attendance')
         .from('attendances')
         .select('date, user_id')
-        .in('user_id', memberIds)
+        .in('user_id', attendanceUserIds)
         .eq('type', 'in')
         .gte('date', startDate)
         .lte('date', endDate);
 
-    if (teamAttendancesError) return 0;
+    if (teamAttendancesError || !teamAttendances) return 0;
 
     const dailyAttendanceCount = teamAttendances.reduce((acc, curr) => {
+        if (!curr.date) return acc;
         if (!acc[curr.date]) {
             acc[curr.date] = new Set();
         }
@@ -696,10 +757,10 @@ export async function getMonthlyTeamAttendanceStats(teamId: string, days: number
 
 export async function getAllAnnouncements() {
     const supabase = createSupabaseAdminClient();
-    return supabase.schema('attendance').from('announcements').select('*, author:author_id(display_name)').order('created_at', { ascending: false });
+    return supabase.schema('attendance').from('announcements').select('*, author:member_members!author_id(display_name)').order('created_at', { ascending: false });
 }
 
-export async function createAnnouncement(data: Omit<TablesInsert<'attendance', 'announcements'>, 'id'>) {
+export async function createAnnouncement(data: Omit<TablesInsert<'attendance', 'announcements'>, 'id' | 'author_id'> & { author_id: string }) {
     const supabase = createSupabaseAdminClient();
     const { error } = await supabase.schema('attendance').from('announcements').insert(data);
     if(error) return { success: false, message: error.message };
@@ -738,7 +799,7 @@ export async function getAllUserEditLogs() {
     return supabase
         .schema('attendance')
         .from('user_edit_logs')
-        .select('*, editor:editor_user_id(display_name), target:target_user_id(display_name)')
+        .select('*, editor:member_members!editor_user_id(display_name), target:member_members!target_user_id(display_name)')
         .order('created_at', { ascending: false });
 }
 
@@ -771,7 +832,7 @@ export async function updateAllUserDisplayNames(): Promise<{ success: boolean, m
         .schema('member')
         .from('members')
         .select('supabase_auth_user_id, discord_uid')
-        .not('discord_uid', 'eq', 'anonymous_admin');
+        .not('discord_uid', 'like', 'anonymous_admin_%');
 
     if (usersError) {
         return { success: false, message: `ユーザーの取得に失敗しました: ${usersError.message}`, count: 0 };
