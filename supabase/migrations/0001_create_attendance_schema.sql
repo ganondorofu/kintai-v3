@@ -13,7 +13,7 @@ alter default privileges in schema attendance grant all on sequences to postgres
 -- attendance.users TABLE
 --
 create table attendance.users (
-    id uuid not null primary key references member.members (id) on delete cascade,
+    id uuid not null primary key references member.members (supabase_auth_user_id) on delete cascade,
     card_id character varying not null,
     created_at timestamp with time zone not null default now(),
     updated_at timestamp with time zone not null default now()
@@ -69,7 +69,7 @@ create table attendance.announcements (
     id uuid not null default gen_random_uuid() primary key,
     title character varying not null,
     content text not null,
-    author_id uuid references member.members (id) on delete set null,
+    author_id uuid references member.members (supabase_auth_user_id) on delete set null,
     is_active boolean not null default true,
     is_current boolean not null default false,
     created_at timestamp with time zone not null default now(),
@@ -85,8 +85,8 @@ create policy "Allow read access for all users" on attendance.announcements for 
 --
 create table attendance.user_edit_logs (
     id uuid not null default gen_random_uuid() primary key,
-    target_user_id uuid not null references member.members(id) on delete cascade,
-    editor_user_id uuid references member.members(id) on delete set null,
+    target_user_id uuid not null references member.members(supabase_auth_user_id) on delete cascade,
+    editor_user_id uuid references member.members(supabase_auth_user_id) on delete set null,
     field_name character varying not null,
     old_value text,
     new_value text,
