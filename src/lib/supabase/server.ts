@@ -38,10 +38,17 @@ export function createSupabaseServerClient() {
 }
 
 export function createSupabaseAdminClient() {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+        throw new Error('Supabase URL or Service Role Key is not set. Please check your .env.local file.');
+    }
+
     const cookieStore = cookies();
     return createServerClient<Database>(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        supabaseUrl,
+        supabaseServiceKey,
         {
             cookies: {
                  get(name: string) {
