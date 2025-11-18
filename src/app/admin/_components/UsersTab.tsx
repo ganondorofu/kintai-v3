@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useMemo, useTransition } from 'react';
@@ -124,7 +125,7 @@ export default function UsersTab({ users: initialUsers, teams, currentUser }: Us
 
     const sortedAndFilteredUsers = useMemo(() => {
         let filtered = initialUsers.filter(user =>
-            user.display_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            user.display_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             (user.card_id && user.card_id.toLowerCase().includes(searchTerm.toLowerCase()))
         );
 
@@ -230,3 +231,5 @@ export default function UsersTab({ users: initialUsers, teams, currentUser }: Us
         </Card>
   )
 }
+
+    
