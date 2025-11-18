@@ -22,9 +22,22 @@ async function RegisterPageImpl({ params }: { params: { token: string } }) {
     const { data: teams } = teamsResult;
     
     let fullProfile = null;
-    if (session?.user?.user_metadata?.provider_id) {
-        const { data } = await supabase.schema('attendance').from('users').select('*, teams(name)').eq('discord_id', session.user.user_metadata.provider_id).single();
-        fullProfile = data;
+    if (session?.user?.id) {
+        const { data } = await supabase.schema('members').from('users').select(`
+            *,
+            attendance_user:attendance_users(card_id),
+            teams:member_team_relations(teams(name))
+        `).eq('id', session.user.id).single();
+        // @ts-ignore
+        if (data) {
+             fullProfile = {
+                ...data,
+                // @ts-ignore
+                teams: data.teams[0]?.teams,
+                // @ts-ignore
+                attendance_user: data.attendance_user[0]
+            }
+        }
     }
 
     return (
@@ -42,6 +55,4 @@ export default function RegisterPage({ params }: { params: { token: string } }) 
     return (
         <Suspense fallback={<div>Loading...</div>}>
             <RegisterPageImpl params={params} />
-        </Suspense>
-    );
-}
+        </Suspense

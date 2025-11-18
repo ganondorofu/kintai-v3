@@ -117,6 +117,3 @@ export default async function AdminPage() {
           <SystemTab />
         </TabsContent>
       </Tabs>
-    </div>
-  );
-}

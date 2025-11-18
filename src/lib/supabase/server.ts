@@ -38,8 +38,6 @@ export function createSupabaseServerClient() {
 }
 
 export function createSupabaseAdminClient() {
-    // The admin client is used for server-side operations that require elevated privileges.
-    // It requires a cookies object even though it doesn't use it for session management.
     const cookieStore = cookies();
     return createServerClient<Database>(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -62,10 +60,4 @@ export function createSupabaseAdminClient() {
                   }
                 },
             },
-            auth: {
-                autoRefreshToken: false,
-                persistSession: false,
-            },
-        }
-    );
-}
+            

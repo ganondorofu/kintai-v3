@@ -16,7 +16,7 @@ import { useFormStatus } from 'react-dom';
 import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { convertGenerationToGrade } from '@/lib/utils';
-
+import { FaDiscord } from 'react-icons/fa';
 
 function SubmitButton() {
     const { pending } = useFormStatus();
@@ -34,6 +34,23 @@ function RegisterForm({ token, teams }: { token: string, teams: any[] }) {
       <div>
         <Label htmlFor="displayName">表示名</Label>
         <Input id="displayName" name="displayName" placeholder="例: 山田太郎" required />
+      </div>
+      <div>
+        <Label htmlFor="studentNumber">学籍番号</Label>
+        <Input id="studentNumber" name="studentNumber" placeholder="例: C2XXXXX" required />
+      </div>
+       <div>
+        <Label htmlFor="status">身分</Label>
+        <Select name="status" required>
+          <SelectTrigger>
+            <SelectValue placeholder="身分を選択してください" />
+          </SelectTrigger>
+          <SelectContent>
+             <SelectItem value="0">中学生</SelectItem>
+             <SelectItem value="1">高校生</SelectItem>
+             <SelectItem value="2">OB/OG</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
       <div>
         <Label htmlFor="generation">期生</Label>
@@ -57,12 +74,17 @@ function RegisterForm({ token, teams }: { token: string, teams: any[] }) {
   );
 }
 
+type FullProfile = Tables<'members', 'users'> & {
+    attendance_user: { card_id: string } | null,
+    teams: { name: string } | null,
+};
+
 export default function RegisterPageClient({ token, tempReg, teams, session, fullProfile }: { 
     token: string,
-    tempReg?: Tables<'temp_registrations'> | null,
-    teams?: Tables<'teams'>[],
+    tempReg?: Tables<'attendance', 'temp_registrations'> | null,
+    teams?: Tables<'members', 'teams'>[],
     session?: any,
-    fullProfile?: (Tables<'users'> & { teams: Tables<'teams'> | null}) | null
+    fullProfile?: FullProfile | null
 }) {
     const searchParams = useSearchParams();
     const success = searchParams.get('success');
@@ -110,6 +132,7 @@ export default function RegisterPageClient({ token, tempReg, teams, session, ful
     }
   
     if (success === 'true' || (session?.user && fullProfile)) {
+        const cardId = fullProfile?.attendance_user?.card_id || tempReg.card_id;
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4">
                 <Card className="w-full max-w-md">
@@ -131,7 +154,7 @@ export default function RegisterPageClient({ token, tempReg, teams, session, ful
                                 </div>
                                 <div className="flex justify-between items-center">
                                     <span className='font-semibold'>📇 カードID</span>
-                                    <span className='font-mono'>{fullProfile?.card_id.slice(0,3)}...{fullProfile?.card_id.slice(-4)}</span>
+                                    <span className='font-mono'>{cardId.slice(0,3)}...{cardId.slice(-4)}</span>
                                 </div>
                            </CardContent>
                         </Card>
@@ -174,16 +197,9 @@ export default function RegisterPageClient({ token, tempReg, teams, session, ful
                     {!session ? (
                         <form action={signInWithDiscord}>
                             <Button type="submit" className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white" size="lg">
-                                <Icons.Discord className="w-5 h-5 mr-2" />
+                                <FaDiscord className="w-5 h-5 mr-2" />
                                 Discordで認証して登録する
                             </Button>
                         </form>
                     ) : (
-                        <RegisterForm token={token} teams={teams || []} />
-                    )}
-
-                </CardContent>
-            </Card>
-        </div>
-    );
-}
+                        <RegisterForm token={token} teams={teams || []

@@ -17,7 +17,7 @@ import DashboardNav from "./_components/DashboardNav";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 async function UserProfile({ user }: { user: any }) {
-  const { data: profile } = await createSupabaseServerClient().schema('attendance').from('users').select('display_name').eq('id', user.id).single();
+  const { data: profile } = await createSupabaseServerClient().schema('members').from('users').select('display_name').eq('id', user.id).single();
   const initials = profile?.display_name?.charAt(0).toUpperCase() || 'U';
   
   return (
@@ -29,7 +29,7 @@ async function UserProfile({ user }: { user: any }) {
         </Avatar>
         <div className="flex flex-col">
             <span className="font-semibold text-sm">{profile?.display_name || '名無しさん'}</span>
-            <span className="text-xs text-muted-foreground">{user.email}</span>
+            <span className="text-xs text-muted-foreground">{user.email?.includes('anonymous') ? '' : user.email}</span>
         </div>
       </div>
        <form action={signOut}>
@@ -41,7 +41,7 @@ async function UserProfile({ user }: { user: any }) {
   )
 }
 
-async function MainSidebar({ user, isAdmin, userTeamId }: { user: any, isAdmin: boolean, userTeamId: number | null }) {
+async function MainSidebar({ user, isAdmin, userTeams }: { user: any, isAdmin: boolean, userTeams: { team_id: number }[] }) {
   const teams = await getTeamsWithMemberStatus();
 
   return (
@@ -56,7 +56,7 @@ async function MainSidebar({ user, isAdmin, userTeamId }: { user: any, isAdmin: 
         </div>
       </SidebarHeader>
       <SidebarContent className="p-2">
-        <DashboardNav isAdmin={isAdmin} teams={teams || []} userTeamId={userTeamId} />
+        <DashboardNav isAdmin={isAdmin} teams={teams || []} userTeams={userTeams} />
       </SidebarContent>
       <SidebarFooter>
         <UserProfile user={user} />
@@ -65,7 +65,7 @@ async function MainSidebar({ user, isAdmin, userTeamId }: { user: any, isAdmin: 
   )
 }
 
-function MobileHeader({ user, isAdmin, userTeamId }: { user: any, isAdmin: boolean, userTeamId: number | null }) {
+function MobileHeader({ user, isAdmin, userTeams }: { user: any, isAdmin: boolean, userTeams: { team_id: number }[] }) {
     return (
         <header className="sticky top-0 z-40 flex h-14 items-center gap-4 border-b bg-background px-4 sm:hidden">
             <Sheet>
@@ -76,7 +76,7 @@ function MobileHeader({ user, isAdmin, userTeamId }: { user: any, isAdmin: boole
                     </Button>
                 </SheetTrigger>
                 <SheetContent side="left" className="sm:max-w-xs flex flex-col p-0">
-                    <MainSidebar user={user} isAdmin={isAdmin} userTeamId={userTeamId} />
+                    <MainSidebar user={user} isAdmin={isAdmin} userTeams={userTeams} />
                 </SheetContent>
             </Sheet>
             <div className="ml-auto">
@@ -98,26 +98,23 @@ export default async function DashboardLayout({
     return redirect("/login");
   }
 
-  const { data: profile, error } = await supabase.schema('attendance').from('users').select('id, role, team_id').eq('id', user.id).single();
+  const { data: profile } = await supabase.schema('members').from('users').select('id, is_admin, member_team_relations(team_id)').eq('id', user.id).single();
 
   if (!profile) {
     await supabase.auth.signOut();
     return redirect("/register/unregistered");
   }
 
-  const isAdmin = profile.role === 1;
+  const isAdmin = profile.is_admin;
+  const userTeams = profile.member_team_relations || [];
 
   return (
     <SidebarProvider>
       <Sidebar className="hidden sm:flex">
-        <MainSidebar user={user} isAdmin={isAdmin} userTeamId={profile.team_id} />
+        <MainSidebar user={user} isAdmin={isAdmin} userTeams={userTeams} />
       </Sidebar>
       <div className="flex flex-col sm:pl-64">
-        <MobileHeader user={user} isAdmin={isAdmin} userTeamId={profile.team_id} />
+        <MobileHeader user={user} isAdmin={isAdmin} userTeams={userTeams} />
         <main className="flex-1 p-4 sm:p-6 bg-secondary/50 min-h-screen">
           {children}
         </main>
-      </div>
-    </SidebarProvider>
-  );
-}

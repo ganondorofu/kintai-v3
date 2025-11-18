@@ -47,6 +47,7 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
+            referencedSchema: "members"
           },
         ]
       }
@@ -103,24 +104,6 @@ export type Database = {
           executed_at?: string
           id?: string
           status?: string
-        }
-        Relationships: []
-      }
-      teams: {
-        Row: {
-          created_at: string
-          id: number
-          name: string
-        }
-        Insert: {
-          created_at?: string
-          id?: number
-          name: string
-        }
-        Update: {
-          created_at?: string
-          id?: number
-          name?: string
         }
         Relationships: []
       }
@@ -189,6 +172,7 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
+            referencedSchema: "members"
           },
           {
             foreignKeyName: "user_edit_logs_target_user_id_fkey"
@@ -196,6 +180,7 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
+            referencedSchema: "members"
           },
         ]
       }
@@ -203,156 +188,234 @@ export type Database = {
         Row: {
           card_id: string
           created_at: string
-          discord_id: string
-          display_name: string
-          generation: number
           id: string
-          is_active: boolean
-          role: number
-          team_id: number | null
           updated_at: string
         }
         Insert: {
           card_id: string
           created_at?: string
-          discord_id: string
-          display_name: string
-          generation: number
           id: string
-          is_active?: boolean
-          role?: number
-          team_id?: number | null
           updated_at?: string
         }
         Update: {
           card_id?: string
           created_at?: string
-          discord_id?: string
-          display_name?: string
-          generation?: number
           id?: string
-          is_active?: boolean
-          role?: number
-          team_id?: number | null
           updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "users_team_id_fkey"
+            foreignKeyName: "users_id_fkey"
+            columns: ["id"]
+            isOneToOne: true
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+            referencedSchema: "members"
+          },
+        ]
+      }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      [_ in never]: never
+    }
+    Enums: never
+    CompositeTypes: never
+  }
+  members: {
+    Tables: {
+      generation_roles: {
+        Row: {
+          discord_role_id: string
+          generation: number
+        }
+        Insert: {
+          discord_role_id: string
+          generation: number
+        }
+        Update: {
+          discord_role_id?: string
+          generation?: number
+        }
+        Relationships: []
+      }
+      member_team_relations: {
+        Row: {
+          created_at: string
+          member_id: string
+          team_id: number
+        }
+        Insert: {
+          created_at?: string
+          member_id: string
+          team_id: number
+        }
+        Update: {
+          created_at?: string
+          member_id?: string
+          team_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "member_team_relations_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "member_team_relations_team_id_fkey"
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      team_leaders: {
+        Row: {
+          member_id: string
+          team_id: number
+        }
+        Insert: {
+          member_id: string
+          team_id: number
+        }
+        Update: {
+          member_id?: string
+          team_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_leaders_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_leaders_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      teams: {
+        Row: {
+          created_at: string
+          discord_role_id: string | null
+          id: number
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          discord_role_id?: string | null
+          id?: number
+          name: string
+        }
+        Update: {
+          created_at?: string
+          discord_role_id?: string | null
+          id?: number
+          name?: string
+        }
+        Relationships: []
+      }
+      users: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          discord_id: string
+          display_name: string
+          generation: number
+          id: string
+          is_admin: boolean
+          status: number
+          student_number: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          discord_id: string
+          display_name: string
+          generation: number
+          id: string
+          is_admin?: boolean
+          status: number
+          student_number?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          discord_id?: string
+          display_name?: string
+          generation?: number
+          id?: string
+          is_admin?: boolean
+          status?: number
+          student_number?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "users_id_fkey"
+            columns: ["id"]
+            isOneToOne: true
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
       }
     }
     Views: {
-      daily_team_stats: {
-        Row: {
-          attendance_count: number | null
-          date: string | null
-          generation: number | null
-          team_id: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "users_team_id_fkey"
-            columns: ["team_id"]
-            isOneToOne: false
-            referencedRelation: "teams"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
+      [_ in never]: never
     }
     Functions: {
-      is_admin: {
-        Args: Record<PropertyKey, never>
-        Returns: boolean
-      }
+      [_ in never]: never
     }
     Enums: never
     CompositeTypes: never
   }
 }
 
+type PublicSchema = keyof (Database)
+
 export type Tables<
-  PublicTableNameOrOptions extends
-    | keyof (Database["attendance"]["Tables"] & Database["attendance"]["Views"])
-    | { schema: keyof Database },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
-    ? keyof (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
-        Database[PublicTableNameOrOptions["schema"]]["Views"])
-    : never = never,
-> = PublicTableNameOrOptions extends { schema: keyof Database }
-  ? (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
-      Database[PublicTableNameOrOptions["schema"]]["Views"])[TableName] extends {
-      Row: infer R
-    }
-    ? R
-    : never
-  : PublicTableNameOrOptions extends keyof (Database["attendance"]["Tables"] &
-        Database["attendance"]["Views"])
-    ? (Database["attendance"]["Tables"] &
-        Database["attendance"]["Views"])[PublicTableNameOrOptions] extends {
-        Row: infer R
-      }
-      ? R
-      : never
-    : never
+  SchemaName extends PublicSchema,
+  TableName extends keyof (Database[SchemaName]["Tables"] &
+    Database[SchemaName]["Views"])
+> = (Database[SchemaName]["Tables"] &
+  Database[SchemaName]["Views"])[TableName] extends {
+  Row: infer R
+}
+  ? R
+  : never
 
 export type TablesInsert<
-  PublicTableNameOrOptions extends
-    | keyof Database["attendance"]["Tables"]
-    | { schema: keyof Database },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
-    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
-> = PublicTableNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-      Insert: infer I
-    }
-    ? I
-    : never
-  : PublicTableNameOrOptions extends keyof Database["attendance"]["Tables"]
-    ? Database["attendance"]["Tables"][PublicTableNameOrOptions] extends {
-        Insert: infer I
-      }
-      ? I
-      : never
-    : never
+  SchemaName extends PublicSchema,
+  TableName extends keyof Database[SchemaName]["Tables"]
+> = Database[SchemaName]["Tables"][TableName] extends {
+  Insert: infer I
+}
+  ? I
+  : never
 
 export type TablesUpdate<
-  PublicTableNameOrOptions extends
-    | keyof Database["attendance"]["Tables"]
-    | { schema: keyof Database },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
-    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
-> = PublicTableNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-      Update: infer U
-    }
-    ? U
-    : never
-  : PublicTableNameOrOptions extends keyof Database["attendance"]["Tables"]
-    ? Database["attendance"]["Tables"][PublicTableNameOrOptions] extends {
-        Update: infer U
-      }
-      ? U
-      : never
-    : never
+  SchemaName extends PublicSchema,
+  TableName extends keyof Database[SchemaName]["Tables"]
+> = Database[SchemaName]["Tables"][TableName] extends {
+  Update: infer U
+}
+  ? U
+  : never
 
 export type Enums<
-  PublicEnumNameOrOptions extends
-    | keyof Database["attendance"]["Enums"]
-    | { schema: keyof Database },
-  EnumName extends PublicEnumNameOrOptions extends { schema: keyof Database }
-    ? keyof Database[PublicEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
-> = PublicEnumNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicEnumNameOrOptions["schema"]]["Enums"][EnumName]
-  : PublicEnumNameOrOptions extends keyof Database["attendance"]["Enums"]
-    ? Database["attendance"]["Enums"][PublicEnumNameOrOptions]
-    : never
+  SchemaName extends PublicSchema,
+  EnumName extends keyof Database[SchemaName]["Enums"]
+> = Database[SchemaName]["Enums"][EnumName]
