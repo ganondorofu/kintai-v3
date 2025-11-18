@@ -47,7 +47,7 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
-            referencedSchema: "members"
+            referencedSchema: "member"
           },
         ]
       }
@@ -172,7 +172,7 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
-            referencedSchema: "members"
+            referencedSchema: "member"
           },
           {
             foreignKeyName: "user_edit_logs_target_user_id_fkey"
@@ -180,7 +180,7 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
-            referencedSchema: "members"
+            referencedSchema: "member"
           },
         ]
       }
@@ -210,7 +210,7 @@ export type Database = {
             isOneToOne: true
             referencedRelation: "users"
             referencedColumns: ["id"]
-            referencedSchema: "members"
+            referencedSchema: "member"
           },
         ]
       }
@@ -224,7 +224,7 @@ export type Database = {
     Enums: never
     CompositeTypes: never
   }
-  members: {
+  member: {
     Tables: {
       generation_roles: {
         Row: {

@@ -65,7 +65,7 @@ type SortDirection = 'asc' | 'desc';
 
 interface UsersTabProps {
     users: UserWithDetails[];
-    teams: Tables<'members', 'teams'>[];
+    teams: Tables<'member', 'teams'>[];
     currentUser: User;
 }
 

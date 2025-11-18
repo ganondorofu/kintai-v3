@@ -23,7 +23,7 @@ async function RegisterPageImpl({ params }: { params: { token: string } }) {
     
     let fullProfile = null;
     if (session?.user?.id) {
-        const { data } = await supabase.schema('members').from('users').select(`
+        const { data } = await supabase.schema('member').from('users').select(`
             *,
             attendance_user:attendance_users(card_id),
             teams:member_team_relations(teams(name))
@@ -55,4 +55,6 @@ export default function RegisterPage({ params }: { params: { token: string } }) 
     return (
         <Suspense fallback={<div>Loading...</div>}>
             <RegisterPageImpl params={params} />
-        </Suspense
+        </Suspense>
+    );
+}
