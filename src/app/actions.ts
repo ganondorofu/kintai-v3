@@ -24,7 +24,7 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
   const { data: attendanceUser, error: attendanceUserError } = await supabase
     .schema('attendance')
     .from('users')
-    .select('id, member:member_members!user_id(display_name)')
+    .select('user_id, member:member_members(display_name)')
     .eq('card_id', normalizedCardId)
     .single();
 
@@ -32,7 +32,7 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
     return { success: false, message: '未登録のカードです。', user: null, type: null };
   }
 
-  const userId = attendanceUser.id;
+  const userId = attendanceUser.user_id;
   // @ts-ignore
   const userDisplayName = attendanceUser.member?.display_name || '名無しさん';
 
@@ -51,11 +51,24 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
   }
 
   const attendanceType = lastAttendance?.type === 'in' ? 'out' : 'in';
+  
+  const { data: attendance_user_id_data, error: attendance_user_id_error } = await supabase
+    .schema('attendance')
+    .from('users')
+    .select('id')
+    .eq('user_id', userId)
+    .single();
+  
+  if (attendance_user_id_error || !attendance_user_id_data) {
+      console.error('Error fetching attendance user id:', attendance_user_id_error);
+      return { success: false, message: '勤怠ユーザーが見つかりません。', user: null, type: null };
+  }
+
 
   const { error: insertError } = await supabase
     .schema('attendance')
     .from('attendances')
-    .insert({ user_id: userId, type: attendanceType });
+    .insert({ user_id: attendance_user_id_data.id, type: attendanceType });
 
   if (insertError) {
     console.error('Attendance insert error:', insertError);
@@ -143,7 +156,6 @@ export async function completeRegistration(formData: FormData) {
     return redirect(`/register/${token}?error=Not authenticated`);
   }
   
-  // Verify member exists in member schema
   const { data: member, error: memberError } = await adminSupabase
     .schema('member')
     .from('members')
@@ -173,7 +185,6 @@ export async function completeRegistration(formData: FormData) {
     return redirect(`/register/${token}?error=Session expired`);
   }
   
-  // Create user in `attendance.users`
   const attendanceUserData: TablesInsert<'attendance', 'users'> = {
       user_id: user.id,
       card_id: tempReg.card_id
@@ -184,7 +195,6 @@ export async function completeRegistration(formData: FormData) {
       return redirect(`/register/${token}?error=Failed to link card to user.`);
   }
   
-  // Mark temp registration as used
   await adminSupabase.schema('attendance').from('temp_registrations').update({ is_used: true }).eq('id', tempReg.id);
 
   revalidatePath('/admin');
@@ -246,7 +256,6 @@ export async function signInAsAnonymousAdmin() {
     
     authUserId = authUser.id;
 
-    // Check if member profile exists
     const { data: memberProfile } = await adminSupabase.schema('member').from('members').select('supabase_auth_user_id').eq('supabase_auth_user_id', authUserId).single();
     if (!memberProfile) {
         const newDisplayName = '匿名管理者';
@@ -263,7 +272,6 @@ export async function signInAsAnonymousAdmin() {
         }
     }
 
-    // Check if attendance profile exists
     const { data: attendanceProfile } = await adminSupabase.schema('attendance').from('users').select('user_id').eq('user_id', authUserId).single();
     if (!attendanceProfile) {
          const { error: createAttendanceUserError } = await adminSupabase.schema('attendance').from('users').insert({
@@ -387,20 +395,20 @@ export async function calculateTotalActivityTime(userId: string, days: number): 
   const supabase = createSupabaseServerClient();
   const startDate = subDays(new Date(), days).toISOString();
 
-  const { data: attendanceUserId, error: attendanceUserError } = await supabase
+  const { data: attendanceUser, error: attendanceUserError } = await supabase
     .schema('attendance')
     .from('users')
     .select('id')
     .eq('user_id', userId)
     .single();
 
-  if (attendanceUserError || !attendanceUserId) return 0;
+  if (attendanceUserError || !attendanceUser) return 0;
 
   const { data: attendances, error } = await supabase
     .schema('attendance')
     .from('attendances')
     .select('type, timestamp')
-    .eq('user_id', attendanceUserId.id)
+    .eq('user_id', attendanceUser.id)
     .gte('timestamp', startDate)
     .order('timestamp', { ascending: true });
 
@@ -602,7 +610,7 @@ export async function forceToggleAttendance(userId: string) {
     return { success: true, message: `ユーザーを強制的に${newType === 'in' ? '出勤' : '退勤'}させました。` };
 }
 
-export async function getTeamWithMembersStatus(teamId: string) {
+export async function getTeamWithMembersStatus(teamId: number) {
     const supabase = createSupabaseAdminClient();
     const { data: { user } } = await createSupabaseServerClient().auth.getUser();
     if (!user) return { team: null, members: [], stats: null, error: 'Not authenticated' };
@@ -647,7 +655,7 @@ export async function getTeamWithMembersStatus(teamId: string) {
 }
 
 
-async function getTeamStats(teamId: string) {
+async function getTeamStats(teamId: number) {
     const supabase = createSupabaseAdminClient();
     const today = new Date();
 
@@ -698,7 +706,7 @@ async function getTeamStats(teamId: string) {
 }
 
 
-export async function getMonthlyTeamAttendanceStats(teamId: string, days: number): Promise<number> {
+export async function getMonthlyTeamAttendanceStats(teamId: number, days: number): Promise<number> {
     const supabase = createSupabaseAdminClient();
     const { data: teamMembers, error: teamMembersError } = await supabase
         .schema('member')
@@ -752,41 +760,6 @@ export async function getMonthlyTeamAttendanceStats(teamId: string, days: number
     const averageRate = dailyRates.length > 0 ? dailyRates.reduce((sum, rate) => sum + rate, 0) / dailyRates.length : 0;
 
     return averageRate;
-}
-
-
-export async function getAllAnnouncements() {
-    const supabase = createSupabaseAdminClient();
-    return supabase.schema('attendance').from('announcements').select('*, author:member_members!author_id(display_name)').order('created_at', { ascending: false });
-}
-
-export async function createAnnouncement(data: Omit<TablesInsert<'attendance', 'announcements'>, 'id' | 'author_id'> & { author_id: string }) {
-    const supabase = createSupabaseAdminClient();
-    const { error } = await supabase.schema('attendance').from('announcements').insert(data);
-    if(error) return { success: false, message: error.message };
-    revalidatePath('/admin');
-    return { success: true, message: 'お知らせを作成しました。'};
-}
-
-export async function updateAnnouncement(id: string, data: TablesUpdate<'attendance', 'announcements'>) {
-    const supabase = createSupabaseAdminClient();
-    if(data.is_current) {
-        await supabase.schema('attendance').from('announcements').update({ is_current: false }).eq('is_current', true);
-    }
-    const { error } = await supabase.schema('attendance').from('announcements').update(data).eq('id', id);
-    if(error) return { success: false, message: error.message };
-    revalidatePath('/admin');
-    revalidatePath('/');
-    return { success: true, message: 'お知らせを更新しました。'};
-}
-
-export async function deleteAnnouncement(id: string) {
-    const supabase = createSupabaseAdminClient();
-    // This is a soft delete
-    const { error } = await supabase.schema('attendance').from('announcements').update({ is_active: false }).eq('id', id);
-    if(error) return { success: false, message: error.message };
-    revalidatePath('/admin');
-    return { success: true, message: 'お知らせを削除しました。' };
 }
 
 export async function logUserEdit(logData: TablesInsert<'attendance', 'user_edit_logs'>) {
