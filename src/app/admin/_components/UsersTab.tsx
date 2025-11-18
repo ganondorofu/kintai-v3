@@ -21,25 +21,46 @@ import {
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog"
-import { Edit, ArrowUpDown, Search } from "lucide-react"
+import { Edit, ArrowUpDown, Search, RefreshCw } from "lucide-react"
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { updateUser, logUserEdit, forceToggleAttendance } from '@/app/actions';
+import { updateUser, forceToggleAttendance, updateAllUserDisplayNames } from '@/app/actions';
 import { Tables } from '@/lib/types';
 import { User } from '@supabase/supabase-js';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { convertGenerationToGrade } from '@/lib/utils';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
-type UserWithDetails = Tables<'members', 'users'> & {
+type UserWithDetails = {
+    id: string;
+    display_name: string;
     card_id: string | null;
-    teams: { id: number, name: string } | null;
-    status: 'in' | 'out';
+    team_name: string | null;
+    team_id: number | null;
+    generation: number;
+    is_admin: boolean;
+    status: string;
+    latest_timestamp: string | null;
+    deleted_at: string | null;
+    student_number: string | null;
+    user_status: number;
 };
 
-type SortKey = keyof UserWithDetails | 'teams.name';
+
+type SortKey = keyof UserWithDetails;
 type SortDirection = 'asc' | 'desc';
 
 interface UsersTabProps {
@@ -87,6 +108,8 @@ export default function UsersTab({ users: initialUsers, teams, currentUser }: Us
     const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'display_name', direction: 'asc' });
     const [users, setUsers] = useState(initialUsers);
     const [isToggling, startToggleTransition] = useTransition();
+    const [isUpdatingNames, startUpdatingNamesTransition] = useTransition();
+
 
     const handleEdit = (user: UserWithDetails) => {
         setEditingUser(user);
@@ -98,12 +121,23 @@ export default function UsersTab({ users: initialUsers, teams, currentUser }: Us
             const result = await forceToggleAttendance(userId);
             if (result.success) {
                 toast({ title: "成功", description: result.message });
-                setUsers(prevUsers => prevUsers.map(u => u.id === userId ? { ...u, status: u.status === 'in' ? 'out' : 'in' } : u));
+                // We re-fetch data on success, so no need to update state manually
             } else {
                 toast({ variant: "destructive", title: "エラー", description: result.message });
             }
         });
     }
+
+    const handleUpdateAllNames = () => {
+        startUpdatingNamesTransition(async () => {
+            const result = await updateAllUserDisplayNames();
+            toast({
+                title: result.success ? "成功" : "エラー",
+                description: result.message,
+                variant: result.success ? "default" : "destructive",
+            });
+        });
+    };
 
     const handleSort = (key: SortKey) => {
         setSort(prevSort => ({
@@ -120,15 +154,8 @@ export default function UsersTab({ users: initialUsers, teams, currentUser }: Us
 
         filtered.sort((a, b) => {
             const key = sort.key;
-            let valA: any, valB: any;
-
-            if (key === 'teams.name') {
-                valA = a.teams?.name || '';
-                valB = b.teams?.name || '';
-            } else {
-                valA = a[key as keyof UserWithDetails];
-                valB = b[key as keyof UserWithDetails];
-            }
+            let valA: any = a[key as keyof UserWithDetails];
+            let valB: any = b[key as keyof UserWithDetails];
             
             if (typeof valA === 'string' && typeof valB === 'string') {
                 valA = valA.toLowerCase();
@@ -166,10 +193,6 @@ export default function UsersTab({ users: initialUsers, teams, currentUser }: Us
 
         if (result.success) {
             toast({ title: "成功", description: result.message });
-            
-            // This is complex now, skipping log for simplicity
-            // Consider a more robust logging mechanism if needed
-
             setDialogOpen(false);
         } else {
             toast({ variant: "destructive", title: "エラー", description: result.message });
@@ -186,8 +209,8 @@ export default function UsersTab({ users: initialUsers, teams, currentUser }: Us
                 </CardDescription>
             </CardHeader>
             <CardContent>
-            <div className="mb-4">
-                 <div className="relative">
+            <div className="mb-4 flex items-center gap-4">
+                 <div className="relative flex-grow">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
                         placeholder="表示名またはカードIDで検索..."
@@ -196,13 +219,35 @@ export default function UsersTab({ users: initialUsers, teams, currentUser }: Us
                         className="pl-9"
                     />
                 </div>
+                <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                        <Button variant="outline">
+                            <RefreshCw className={`mr-2 h-4 w-4 ${isUpdatingNames ? 'animate-spin' : ''}`} />
+                            表示名を更新
+                        </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                        <AlertDialogTitle>全ユーザーの表示名を更新しますか？</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Discordサーバーのニックネーム（本名）をAPI経由で取得し、このシステムの全ユーザーの表示名を上書きします。この操作は時間がかかる場合があります。
+                        </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                        <AlertDialogCancel>キャンセル</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleUpdateAllNames} disabled={isUpdatingNames}>
+                            {isUpdatingNames ? '更新中...' : '実行する'}
+                        </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
             </div>
             <Table>
                 <TableHeader>
                     <TableRow>
                         <SortableHeader sortKey="display_name" currentSort={sort} onSort={handleSort}>表示名</SortableHeader>
-                        <SortableHeader sortKey="teams.name" currentSort={sort} onSort={handleSort}>班</SortableHeader>
-                         <SortableHeader sortKey="generation" currentSort={sort} onSort={handleSort}>学年/期生</SortableHeader>
+                        <SortableHeader sortKey="team_name" currentSort={sort} onSort={handleSort}>班</SortableHeader>
+                        <SortableHeader sortKey="generation" currentSort={sort} onSort={handleSort}>学年/期生</SortableHeader>
                         <SortableHeader sortKey="is_admin" currentSort={sort} onSort={handleSort}>役割</SortableHeader>
                         <SortableHeader sortKey="status" currentSort={sort} onSort={handleSort}>現在の状態</SortableHeader>
                         <SortableHeader sortKey="card_id" currentSort={sort} onSort={handleSort}>カードID</SortableHeader>
@@ -212,9 +257,9 @@ export default function UsersTab({ users: initialUsers, teams, currentUser }: Us
                 </TableHeader>
                 <TableBody>
                     {sortedAndFilteredUsers?.map(user => (
-                        <TableRow key={user.id} data-state={user.deleted_at ? "disabled" : ""}>
+                        <TableRow key={user.id} data-state={user.deleted_at ? "disabled" : ""} className={isToggling ? 'opacity-50' : ''}>
                             <TableCell className="font-medium">{user.display_name}</TableCell>
-                            <TableCell>{user.teams?.name || '未所属'}</TableCell>
+                            <TableCell>{user.team_name || '未所属'}</TableCell>
                             <TableCell>{convertGenerationToGrade(user.generation)}</TableCell>
                             <TableCell>
                                 <Badge variant={user.is_admin ? "destructive" : "outline"}>{user.is_admin ? '管理者' : '部員'}</Badge>
@@ -273,7 +318,7 @@ export default function UsersTab({ users: initialUsers, teams, currentUser }: Us
                             </div>
                              <div>
                                 <Label htmlFor="status">身分</Label>
-                                <Select name="status" defaultValue={String(editingUser?.status)}>
+                                <Select name="status" defaultValue={String(editingUser?.user_status)}>
                                     <SelectTrigger>
                                         <SelectValue placeholder="身分を選択" />
                                     </SelectTrigger>
@@ -286,7 +331,7 @@ export default function UsersTab({ users: initialUsers, teams, currentUser }: Us
                             </div>
                             <div>
                                 <Label htmlFor="team_id">班</Label>
-                                <Select name="team_id" defaultValue={String(editingUser?.teams?.id)}>
+                                <Select name="team_id" defaultValue={String(editingUser?.team_id)}>
                                     <SelectTrigger>
                                         <SelectValue placeholder="班を選択" />
                                     </SelectTrigger>
@@ -324,3 +369,11 @@ export default function UsersTab({ users: initialUsers, teams, currentUser }: Us
                             </DialogClose>
                             <Button type="submit" disabled={isSubmitting}>
                                 {isSubmitting ? "保存中..." : "保存"}
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+             </Dialog>
+        </Card>
+  )
+}

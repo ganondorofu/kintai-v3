@@ -31,9 +31,8 @@ function RegisterForm({ token, teams }: { token: string, teams: any[] }) {
   return (
     <form action={completeRegistration} className="space-y-4">
       <input type="hidden" name="token" value={token} />
-      <div>
-        <Label htmlFor="displayName">表示名</Label>
-        <Input id="displayName" name="displayName" placeholder="例: 山田太郎" required />
+      <div className='text-sm text-muted-foreground'>
+        あなたのDiscordのニックネーム(本名)が表示名として自動登録されます。
       </div>
       <div>
         <Label htmlFor="studentNumber">学籍番号</Label>
@@ -202,4 +201,10 @@ export default function RegisterPageClient({ token, tempReg, teams, session, ful
                             </Button>
                         </form>
                     ) : (
-                        <RegisterForm token={token} teams={teams || []
+                        <RegisterForm token={token} teams={teams || []} />
+                    )}
+                </CardContent>
+            </Card>
+        </div>
+    );
+}

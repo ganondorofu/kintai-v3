@@ -24,7 +24,7 @@ async function UserProfile({ user }: { user: any }) {
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-3">
         <Avatar>
-            <AvatarImage src={user.user_metadata.avatar_url} alt={profile?.display_name} />
+            <AvatarImage src={user.user_metadata.avatar_url} alt={profile?.display_name || ''} />
             <AvatarFallback>{initials}</AvatarFallback>
         </Avatar>
         <div className="flex flex-col">
@@ -118,3 +118,7 @@ export default async function DashboardLayout({
         <main className="flex-1 p-4 sm:p-6 bg-secondary/50 min-h-screen">
           {children}
         </main>
+      </div>
+    </SidebarProvider>
+  );
+}
