@@ -30,7 +30,7 @@ export default async function DashboardPage() {
     }
 
     const { data: profile } = await supabase
-        .schema('members')
+        .schema('member')
         .from('users')
         .select(`
             *,

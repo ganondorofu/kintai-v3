@@ -73,7 +73,7 @@ function RegisterForm({ token, teams }: { token: string, teams: any[] }) {
   );
 }
 
-type FullProfile = Tables<'members', 'users'> & {
+type FullProfile = Tables<'member', 'users'> & {
     attendance_user: { card_id: string } | null,
     teams: { name: string } | null,
 };
@@ -81,7 +81,7 @@ type FullProfile = Tables<'members', 'users'> & {
 export default function RegisterPageClient({ token, tempReg, teams, session, fullProfile }: { 
     token: string,
     tempReg?: Tables<'attendance', 'temp_registrations'> | null,
-    teams?: Tables<'members', 'teams'>[],
+    teams?: Tables<'member', 'teams'>[],
     session?: any,
     fullProfile?: FullProfile | null
 }) {
