@@ -122,7 +122,7 @@ export async function getTempRegistration(token: string) {
 
     if (!data.accessed_at) {
         const admin = createSupabaseAdminClient();
-        await admin.schema('attendance').from('temp_registregistrations').update({ accessed_at: new Date().toISOString() }).eq('id', data.id);
+        await admin.schema('attendance').from('temp_registrations').update({ accessed_at: new Date().toISOString() }).eq('id', data.id);
     }
 
     return data;
@@ -622,7 +622,7 @@ export async function getTeamWithMembersStatus(teamId: number) {
 }
 
 
-async function getTeamStats(teamId: number) {
+async function getTeamStats(teamId: string) {
     const supabase = createSupabaseAdminClient();
     const today = new Date();
 
@@ -673,7 +673,7 @@ async function getTeamStats(teamId: number) {
 }
 
 
-export async function getMonthlyTeamAttendanceStats(teamId: number, days: number): Promise<number> {
+export async function getMonthlyTeamAttendanceStats(teamId: string, days: number): Promise<number> {
     const supabase = createSupabaseAdminClient();
     const { data: teamMembers, error: teamMembersError } = await supabase
         .schema('member')
@@ -767,8 +767,8 @@ export async function updateAllUserDisplayNames(): Promise<{ success: boolean, m
         return { success: false, message: '更新対象のユーザーが見つかりません。', count: 0 };
     }
 
-    const allNames = await fetchAllMemberNames();
-    if (!allNames) {
+    const { data: allNames, error: nameApiError } = await fetchAllMemberNames();
+    if (nameApiError || !allNames) {
         return { success: false, message: 'APIからの名前リストの取得に失敗しました。', count: 0 };
     }
 
@@ -801,5 +801,7 @@ export async function updateAllUserDisplayNames(): Promise<{ success: boolean, m
     revalidatePath('/dashboard');
     return { success: true, message: `${updatedCount}人のユーザー表示名を正常に更新しました。`, count: updatedCount };
 }
+
+    
 
     
