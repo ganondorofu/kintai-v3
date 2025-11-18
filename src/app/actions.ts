@@ -24,7 +24,7 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
   const { data: attendanceUser, error: attendanceUserError } = await supabase
     .schema('attendance')
     .from('users')
-    .select('supabase_auth_user_id, member:member_members(display_name)')
+    .select('supabase_auth_user_id, member:member_members!inner(display_name)')
     .eq('card_id', normalizedCardId)
     .single();
 
@@ -33,7 +33,6 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
   }
 
   const userId = attendanceUser.supabase_auth_user_id;
-  // @ts-ignore
   const userDisplayName = attendanceUser.member?.display_name || '名無しさん';
 
   const { data: lastAttendance, error: lastAttendanceError } = await supabase
@@ -245,10 +244,9 @@ export async function signInAsAnonymousAdmin() {
 
     const { data: memberProfile } = await adminSupabase.schema('member').from('members').select('supabase_auth_user_id').eq('supabase_auth_user_id', authUserId).single();
     if (!memberProfile) {
-        const newDisplayName = '匿名管理者';
         const { error: createMemberError } = await adminSupabase.schema('member').from('members').insert({
             supabase_auth_user_id: authUserId,
-            display_name: newDisplayName,
+            display_name: '匿名管理者',
             discord_uid: `anonymous_admin_${randomUUID().slice(0,8)}`,
             generation: 0,
             status: 2,
@@ -767,16 +765,17 @@ export async function updateAllUserDisplayNames(): Promise<{ success: boolean, m
         return { success: false, message: '更新対象のユーザーが見つかりません。', count: 0 };
     }
 
-    const { data: allNames, error: nameApiError } = await fetchAllMemberNames();
-    if (nameApiError || !allNames) {
+    const nameApiResult = await fetchAllMemberNames();
+    if (!nameApiResult) {
         return { success: false, message: 'APIからの名前リストの取得に失敗しました。', count: 0 };
     }
 
-    const nameMap = new Map<string, string>(allNames.map(item => [item.uid, item.name]));
+    const nameMap = new Map<string, string>(nameApiResult.map(item => [item.uid, item.name]));
     let updatedCount = 0;
     const errors: string[] = [];
 
     for (const user of users) {
+        if (!user.discord_uid) continue;
         const newName = nameMap.get(user.discord_uid);
         if (newName) {
             const { error: updateError } = await supabase
@@ -801,6 +800,8 @@ export async function updateAllUserDisplayNames(): Promise<{ success: boolean, m
     revalidatePath('/dashboard');
     return { success: true, message: `${updatedCount}人のユーザー表示名を正常に更新しました。`, count: updatedCount };
 }
+
+    
 
     
 
