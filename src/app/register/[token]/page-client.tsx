@@ -1,0 +1,173 @@
+'use client'
+
+import { completeRegistration, signInWithDiscord } from '@/app/actions';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Icons } from '@/components/icons';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import type { Tables } from '@/lib/types';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { AlertTriangle, Clock } from 'lucide-react';
+import { useFormStatus } from 'react-dom';
+import { format } from 'date-fns';
+import { ja } from 'date-fns/locale';
+import { convertGenerationToGrade } from '@/lib/utils';
+import { FaDiscord } from 'react-icons/fa';
+
+function SubmitButton() {
+    const { pending } = useFormStatus();
+    return (
+        <Button type="submit" className="w-full" size="lg" disabled={pending}>
+            {pending ? "登録中..." : "登録を完了する"}
+        </Button>
+    );
+}
+
+function RegisterForm({ token }: { token: string }) {
+  return (
+    <form action={completeRegistration} className="space-y-4">
+      <input type="hidden" name="token" value={token} />
+       <div className='text-sm text-muted-foreground text-center'>
+        ユーザー情報を確認しました。下のボタンを押して、このカードの登録を完了してください。
+      </div>
+      <SubmitButton />
+    </form>
+  );
+}
+
+type FullProfile = Tables<'member', 'members'> & {
+    attendance_user: { card_id: string } | null,
+    teams: { name: string } | null,
+};
+
+export default function RegisterPageClient({ token, tempReg, teams, session, fullProfile }: { 
+    token: string,
+    tempReg?: Tables<'attendance', 'temp_registrations'> | null,
+    teams?: Tables<'member', 'teams'>[],
+    session?: any,
+    fullProfile?: FullProfile | null
+}) {
+    const searchParams = useSearchParams();
+    const success = searchParams.get('success');
+    const error = searchParams.get('error');
+
+    if (token === 'unregistered') {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4">
+                <Card className="w-full max-w-md">
+                    <CardHeader className="items-center text-center">
+                        <Icons.UserPlus className="w-16 h-16 text-destructive mb-4" />
+                        <CardTitle className="text-2xl">カードが未登録です</CardTitle>
+                        <CardDescription>
+                            ダッシュボードにアクセスするには、まずカードを登録する必要があります。
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="text-center space-y-4">
+                        <p className="text-muted-foreground">お手数ですが、Kiosk端末でQRコードをスキャンして登録を完了してください。</p>
+                        <Button asChild variant="outline">
+                            <Link href="/login">ログインページに戻る</Link>
+                        </Button>
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    }
+  
+    if (!tempReg || tempReg.is_used || new Date(tempReg.expires_at) < new Date()) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4">
+                <Card className="w-full max-w-md">
+                    <CardHeader className="items-center text-center">
+                        <Icons.XCircle className="w-16 h-16 text-destructive mb-4" />
+                        <CardTitle className="text-2xl">登録エラー</CardTitle>
+                        <CardDescription>
+                            {tempReg?.is_used ? "この登録リンクは既に使用されています。" : "この登録リンクは無効か、有効期限が切れています。"}
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <p className="text-center text-muted-foreground">お手数ですが、もう一度Kiosk端末でQRコードを生成してください。</p>
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    }
+  
+    if (success === 'true' || (session?.user && fullProfile?.attendance_user)) {
+        const cardId = fullProfile?.attendance_user?.card_id || tempReg.card_id;
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4">
+                <Card className="w-full max-w-md">
+                    <CardHeader className="items-center text-center">
+                        <Icons.CheckCircle2 className="w-16 h-16 text-green-500 mb-4" />
+                        <CardTitle className="text-2xl">登録が完了しました！</CardTitle>
+                        <CardDescription>これでカードが使用可能になりました。</CardDescription>
+                    </CardHeader>
+                    <CardContent className='space-y-4'>
+                        <Card className='bg-muted/50'>
+                           <CardContent className='p-4 space-y-2'>
+                                <div className="flex justify-between items-center">
+                                    <span className='font-semibold'>👤 表示ユーザー名</span>
+                                    <span>{fullProfile?.display_name}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className='font-semibold'>🏷️ 班・学年/期生</span>
+                                    <span>{fullProfile?.teams?.name}・{fullProfile?.generation ? convertGenerationToGrade(fullProfile.generation) : ''}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className='font-semibold'>📇 カードID</span>
+                                    <span className='font-mono'>{cardId.slice(0,3)}...{cardId.slice(-4)}</span>
+                                </div>
+                           </CardContent>
+                        </Card>
+                        <Button asChild className="w-full"><Link href="/dashboard">ダッシュボードへ</Link></Button>
+                        <p className='text-center text-muted-foreground text-sm'>カードリーダーで打刻してください。</p>
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    }
+
+    return (
+        <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4">
+            <Card className="w-full max-w-md">
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-2xl"><Icons.UserPlus /> カード登録</CardTitle>
+                    <CardDescription>QRコードスキャンありがとうございます。情報を入力して登録を完了してください。</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                    {error && (
+                        <Alert variant="destructive">
+                            <AlertTriangle className="h-4 w-4" />
+                            <AlertTitle>登録エラー</AlertTitle>
+                            <AlertDescription>{error}</AlertDescription>
+                        </Alert>
+                    )}
+                    <Card className="bg-muted/50">
+                        <CardContent className="p-4 space-y-2 text-sm">
+                             <div className="flex justify-between">
+                                <span className="text-muted-foreground">📇 カードID:</span>
+                                <span className="font-mono font-medium">{tempReg.card_id}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-muted-foreground flex items-center gap-1"><Clock className="w-4 h-4"/>読み取り日時:</span>
+                                <span className="font-medium">{format(new Date(tempReg.created_at), 'yyyy/MM/dd HH:mm', { locale: ja })}</span>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    
+                    {!session ? (
+                        <form action={signInWithDiscord}>
+                            <Button type="submit" className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white" size="lg">
+                                <FaDiscord className="w-5 h-5 mr-2" />
+                                Discordで認証して登録する
+                            </Button>
+                        </form>
+                    ) : (
+                        <RegisterForm token={token} />
+                    )}
+                </CardContent>
+            </Card>
+        </div>
+    );
+}
