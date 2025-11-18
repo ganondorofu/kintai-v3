@@ -14,7 +14,7 @@ alter default privileges in schema attendance grant all on sequences to postgres
 --
 create table attendance.users (
     id uuid not null default gen_random_uuid() primary key,
-    user_id uuid not null unique references member.members (supabase_auth_user_id) on delete cascade,
+    user_id uuid not null unique references member.members(supabase_auth_user_id) on delete cascade,
     card_id character varying not null unique,
     created_at timestamp with time zone not null default now(),
     updated_at timestamp with time zone not null default now()
@@ -39,7 +39,8 @@ alter table attendance.attendances enable row level security;
 create index idx_attendances_date_user on attendance.attendances using btree (date, user_id);
 create index idx_attendances_user_timestamp on attendance.attendances using btree (user_id, "timestamp");
 create policy "Allow all access to service_role" on attendance.attendances for all to service_role using (true) with check (true);
-create policy "Allow read access to user for their own records" on attendance.attendances for select to authenticated using (auth.uid() in (select user_id from attendance.users where id = attendances.user_id));
+create policy "Allow read access to user for their own records" on attendance.attendances for select to authenticated using ((select user_id from attendance.users where id = attendances.user_id) = auth.uid());
+
 
 --
 -- attendance.temp_registrations TABLE
@@ -54,30 +55,11 @@ create table attendance.temp_registrations (
     created_at timestamp with time zone not null default now()
 );
 alter table attendance.temp_registrations enable row level security;
+create unique index temp_registrations_card_id on attendance.temp_registrations using btree (card_id, is_used, expires_at);
 create unique index temp_registrations_qr_token_key on attendance.temp_registrations using btree (qr_token);
-create index idx_temp_registrations_card_id on attendance.temp_registrations using btree (card_id, is_used, expires_at);
 create index idx_temp_registrations_expires on attendance.temp_registrations using btree (expires_at);
-
 create policy "Allow all access to service_role" on attendance.temp_registrations for all to service_role using (true) with check (true);
 create policy "Allow read access for all users" on attendance.temp_registrations for select using (true);
-
-
---
--- attendance.announcements TABLE
---
-create table attendance.announcements (
-    id uuid not null default gen_random_uuid() primary key,
-    title character varying not null,
-    content text not null,
-    author_id uuid references member.members (supabase_auth_user_id) on delete set null,
-    is_active boolean not null default true,
-    is_current boolean not null default false,
-    created_at timestamp with time zone not null default now(),
-    updated_at timestamp with time zone not null default now()
-);
-alter table attendance.announcements enable row level security;
-create policy "Allow all access to service_role" on attendance.announcements for all to service_role using (true) with check (true);
-create policy "Allow read access for all users" on attendance.announcements for select using (true);
 
 
 --

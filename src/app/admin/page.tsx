@@ -1,12 +1,11 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import UsersTab from "./_components/UsersTab";
-import AnnouncementsTab from "./_components/AnnouncementsTab";
 import LogsTab from "./_components/LogsTab";
 import TeamsTab from "./_components/TeamsTab";
 import SystemTab from "./_components/SystemTab";
-import { getAllUsersWithStatus, getAllTeams, getAllAnnouncements, getAllUserEditLogs, getAllDailyLogoutLogs, getTempRegistrations } from "../actions";
-import { User, Annoyed, History, AlertCircle, Users2, Power, FilePenLine } from "lucide-react";
+import { getAllUsersWithStatus, getAllTeams, getAllUserEditLogs, getAllDailyLogoutLogs, getTempRegistrations } from "../actions";
+import { User, History, AlertCircle, Users2, Power, FilePenLine } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import TempRegistrationsTab from "./_components/TempRegistrationsTab";
 
@@ -30,14 +29,12 @@ export default async function AdminPage() {
   const [
     usersResult,
     teamsResult,
-    announcementsResult,
     userEditLogsResult,
     dailyLogoutLogsResult,
     tempRegistrationsResult,
   ] = await Promise.all([
     getAllUsersWithStatus(),
     getAllTeams(),
-    getAllAnnouncements(),
     getAllUserEditLogs(),
     getAllDailyLogoutLogs(),
     getTempRegistrations(),
@@ -45,13 +42,12 @@ export default async function AdminPage() {
 
   const { data: users, error: usersError } = usersResult;
   const { data: teams, error: teamsError } = teamsResult;
-  const { data: announcements, error: announcementsError } = announcementsResult;
   const { data: userEditLogs, error: userEditLogsError } = userEditLogsResult;
   const { data: dailyLogoutLogs, error: dailyLogoutLogsError } = dailyLogoutLogsResult;
   const { data: tempRegistrations, error: tempRegistrationsError } = tempRegistrationsResult;
 
 
-  const errors = [usersError, teamsError, announcementsError, userEditLogsError, dailyLogoutLogsError, tempRegistrationsError].filter(Boolean);
+  const errors = [usersError, teamsError, userEditLogsError, dailyLogoutLogsError, tempRegistrationsError].filter(Boolean);
 
   return (
     <div className="space-y-6">
@@ -73,7 +69,7 @@ export default async function AdminPage() {
       )}
 
       <Tabs defaultValue="users" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-6">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-5">
           <TabsTrigger value="users">
             <User className="mr-2 h-4 w-4" />
             ユーザー管理
@@ -85,10 +81,6 @@ export default async function AdminPage() {
            <TabsTrigger value="temp_registrations">
             <FilePenLine className="mr-2 h-4 w-4" />
             仮登録管理
-          </TabsTrigger>
-          <TabsTrigger value="announcements">
-            <Annoyed className="mr-2 h-4 w-4" />
-            お知らせ管理
           </TabsTrigger>
           <TabsTrigger value="logs">
             <History className="mr-2 h-4 w-4" />
@@ -111,12 +103,6 @@ export default async function AdminPage() {
         </TabsContent>
          <TabsContent value="temp_registrations">
             <TempRegistrationsTab tempRegistrations={tempRegistrations || []} />
-        </TabsContent>
-        <TabsContent value="announcements">
-          <AnnouncementsTab 
-            announcements={announcements || []} 
-            currentUser={currentUser}
-          />
         </TabsContent>
         <TabsContent value="logs">
           <LogsTab 

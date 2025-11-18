@@ -12,7 +12,6 @@ import { useToast } from '@/hooks/use-toast';
 
 type KioskState = 'idle' | 'input' | 'success' | 'error' | 'register' | 'qr' | 'processing' | 'loading';
 type AttendanceType = 'in' | 'out' | null;
-type Announcement = Database['attendance']['Tables']['announcements']['Row'] | null;
 
 const AUTO_RESET_DELAY = 5000;
 
@@ -23,7 +22,6 @@ export default function KioskPage() {
   const [inputValue, setInputValue] = useState('');
   const [qrToken, setQrToken] = useState<string | null>(null);
   const [qrExpiry, setQrExpiry] = useState<number>(0);
-  const [announcement, setAnnouncement] = useState<Announcement>(null);
   const [isOnline, setIsOnline] = useState<boolean | undefined>(undefined);
   const [attendanceType, setAttendanceType] = useState<AttendanceType>(null);
   const { toast } = useToast();
@@ -34,13 +32,8 @@ export default function KioskPage() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
   useEffect(() => {
-    const fetchData = async () => {
-        const { data: initialAnnouncement } = await supabase.schema('attendance').from('announcements').select('*').eq('is_current', true).limit(1).maybeSingle();
-        setAnnouncement(initialAnnouncement);
-        setKioskState('idle');
-    };
-    fetchData();
-  }, [supabase]);
+    setKioskState('idle');
+  }, []);
 
 
   const resetToIdle = useCallback(() => {
@@ -174,22 +167,10 @@ export default function KioskPage() {
         ).subscribe();
     }
     
-    const announcementChannel = supabase
-      .channel('kiosk-announcement-channel')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'attendance', table: 'announcements' },
-        async () => {
-          const { data } = await supabase.schema('attendance').from('announcements').select('*').eq('is_current', true).limit(1).maybeSingle();
-          setAnnouncement(data);
-        }
-      ).subscribe();
-
     return () => {
       window.removeEventListener('online', updateOnlineStatus);
       window.removeEventListener('offline', updateOnlineStatus);
       if (qrChannel) supabase.removeChannel(qrChannel);
-      if (announcementChannel) supabase.removeChannel(announcementChannel);
     };
   }, [supabase, qrToken, kioskState, resetToIdle]);
   
@@ -228,15 +209,6 @@ export default function KioskPage() {
         </header>
 
         <div className="flex-grow w-full flex flex-col items-center justify-center overflow-y-auto py-4">
-            {announcement && announcement.is_active && (
-                <div className="w-full max-w-4xl p-6 bg-blue-500/10 border border-blue-400/30 rounded-lg text-center mb-8">
-                <h2 className="text-2xl font-bold mb-2 flex items-center justify-center gap-3">
-                    <Bell className="text-blue-300" />
-                    {announcement.title}
-                </h2>
-                <p className="text-lg text-gray-300 whitespace-pre-wrap">{announcement.content}</p>
-                </div>
-            )}
             <Clock />
         </div>
         

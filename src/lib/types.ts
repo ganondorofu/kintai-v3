@@ -9,48 +9,6 @@ export type Json =
 export type Database = {
   attendance: {
     Tables: {
-      announcements: {
-        Row: {
-          author_id: string | null
-          content: string
-          created_at: string
-          id: string
-          is_active: boolean
-          is_current: boolean
-          title: string
-          updated_at: string
-        }
-        Insert: {
-          author_id?: string | null
-          content: string
-          created_at?: string
-          id?: string
-          is_active?: boolean
-          is_current?: boolean
-          title: string
-          updated_at?: string
-        }
-        Update: {
-          author_id?: string | null
-          content?: string
-          created_at?: string
-          id?: string
-          is_active?: boolean
-          is_current?: boolean
-          title?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "announcements_author_id_fkey"
-            columns: ["author_id"]
-            isOneToOne: false
-            referencedRelation: "members"
-            referencedColumns: ["supabase_auth_user_id"]
-            referencedSchema: "member"
-          },
-        ]
-      }
       attendances: {
         Row: {
           created_at: string
