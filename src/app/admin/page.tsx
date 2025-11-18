@@ -1,10 +1,11 @@
+
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import UsersTab from "./_components/UsersTab";
 import LogsTab from "./_components/LogsTab";
 import TeamsTab from "./_components/TeamsTab";
 import SystemTab from "./_components/SystemTab";
-import { getAllUsersWithStatus, getAllTeams, getAllUserEditLogs, getAllDailyLogoutLogs, getTempRegistrations } from "../actions";
+import { getAllUsersWithStatus, getAllTeams, getAllDailyLogoutLogs, getTempRegistrations } from "../actions";
 import { User, History, AlertCircle, Users2, Power, FilePenLine } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import TempRegistrationsTab from "./_components/TempRegistrationsTab";
@@ -29,25 +30,22 @@ export default async function AdminPage() {
   const [
     usersResult,
     teamsResult,
-    userEditLogsResult,
     dailyLogoutLogsResult,
     tempRegistrationsResult,
   ] = await Promise.all([
     getAllUsersWithStatus(),
     getAllTeams(),
-    getAllUserEditLogs(),
     getAllDailyLogoutLogs(),
     getTempRegistrations(),
   ]);
 
   const { data: users, error: usersError } = usersResult;
   const { data: teams, error: teamsError } = teamsResult;
-  const { data: userEditLogs, error: userEditLogsError } = userEditLogsResult;
   const { data: dailyLogoutLogs, error: dailyLogoutLogsError } = dailyLogoutLogsResult;
   const { data: tempRegistrations, error: tempRegistrationsError } = tempRegistrationsResult;
 
 
-  const errors = [usersError, teamsError, userEditLogsError, dailyLogoutLogsError, tempRegistrationsError].filter(Boolean);
+  const errors = [usersError, teamsError, dailyLogoutLogsError, tempRegistrationsError].filter(Boolean);
 
   return (
     <div className="space-y-6">
@@ -106,7 +104,6 @@ export default async function AdminPage() {
         </TabsContent>
         <TabsContent value="logs">
           <LogsTab 
-            userEditLogs={userEditLogs || []} 
             dailyLogoutLogs={dailyLogoutLogs || []}
           />
         </TabsContent>

@@ -1,3 +1,4 @@
+
 export type Json =
   | string
   | number
@@ -39,8 +40,9 @@ export type Database = {
             foreignKeyName: "attendances_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
+            referencedRelation: "members"
+            referencedColumns: ["supabase_auth_user_id"]
+            referencedSchema: "member"
           },
         ]
       }
@@ -95,78 +97,28 @@ export type Database = {
         }
         Relationships: []
       }
-      user_edit_logs: {
-        Row: {
-          created_at: string
-          editor_user_id: string | null
-          field_name: string
-          id: string
-          new_value: string | null
-          old_value: string | null
-          target_user_id: string
-        }
-        Insert: {
-          created_at?: string
-          editor_user_id?: string | null
-          field_name: string
-          id?: string
-          new_value?: string | null
-          old_value?: string | null
-          target_user_id: string
-        }
-        Update: {
-          created_at?: string
-          editor_user_id?: string | null
-          field_name?: string
-          id?: string
-          new_value?: string | null
-          old_value?: string | null
-          target_user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "user_edit_logs_editor_user_id_fkey"
-            columns: ["editor_user_id"]
-            isOneToOne: false
-            referencedRelation: "members"
-            referencedColumns: ["supabase_auth_user_id"]
-            referencedSchema: "member"
-          },
-          {
-            foreignKeyName: "user_edit_logs_target_user_id_fkey"
-            columns: ["target_user_id"]
-            isOneToOne: false
-            referencedRelation: "members"
-            referencedColumns: ["supabase_auth_user_id"]
-            referencedSchema: "member"
-          },
-        ]
-      }
       users: {
         Row: {
           card_id: string
           created_at: string
-          id: string
           updated_at: string
           user_id: string
         }
         Insert: {
           card_id: string
           created_at?: string
-          id?: string
           updated_at?: string
           user_id: string
         }
         Update: {
           card_id?: string
           created_at?: string
-          id?: string
           updated_at?: string
           user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "users_user_id_fkey"
+            foreignKeyName: "attendance_users_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: true
             referencedRelation: "members"
