@@ -29,7 +29,15 @@ export default async function DashboardPage() {
         redirect('/login');
     }
 
-    const { data: profile } = await supabase.schema('attendance').from('users').select('*, teams(name)').eq('id', user!.id).single();
+    const { data: profile } = await supabase
+        .schema('members')
+        .from('users')
+        .select(`
+            *,
+            teams:member_team_relations(teams(name))
+        `)
+        .eq('id', user!.id)
+        .single();
     
     if (!profile) {
         redirect('/register/unregistered');
@@ -45,8 +53,7 @@ export default async function DashboardPage() {
     
     const { data: attendances } = attendancesResult;
 
-    // 1. Correctly count distinct attendance days for the user in the last 30 days
-    const { data: distinctDates, error: distinctDatesError } = await supabase
+    const { data: distinctDates } = await supabase
       .schema('attendance')
       .from('attendances')
       .select('date')
@@ -56,22 +63,20 @@ export default async function DashboardPage() {
 
     const userAttendanceDays = distinctDates ? new Set(distinctDates.map(d => d.date)).size : 0;
     
-    // 2. Get total number of active club days (days where at least one person attended) in the last 30 days,
-    // but only since the user has been registered.
-    const { data: totalClubActivityDates, error: totalClubActivityDatesError } = await supabase
+    const { data: totalClubActivityDates } = await supabase
       .schema('attendance')
       .from('attendances')
       .select('date')
       .eq('type', 'in')
       .gte('date', thirtyDaysAgo)
-      .gte('date', userCreatedAtDate); // Only count days after user registered
+      .gte('date', userCreatedAtDate); 
     
     const totalClubDays = totalClubActivityDates ? new Set(totalClubActivityDates.map(d => d.date)).size : 0;
 
-    // 3. Calculate attendance rate based on the new logic
     const attendanceRate = totalClubDays > 0 ? (userAttendanceDays / totalClubDays) * 100 : 0;
     
-    const isAdmin = profile?.role === 1;
+    const isAdmin = profile?.is_admin;
+    const teamName = profile?.teams?.[0]?.teams?.name;
 
   return (
     <div className="space-y-6">
@@ -81,7 +86,7 @@ export default async function DashboardPage() {
                 <p className="text-muted-foreground">こんにちは, {profile?.display_name}さん！</p>
             </div>
             <div className="text-right">
-                <Badge variant="secondary">{profile?.teams?.name}</Badge>
+                {teamName && <Badge variant="secondary">{teamName}</Badge>}
                 <p className="text-sm text-muted-foreground">{profile?.generation ? convertGenerationToGrade(profile.generation) : ''}</p>
             </div>
         </div>
@@ -179,5 +184,3 @@ export default async function DashboardPage() {
         </div>
       </div>
     </div>
-  );
-}

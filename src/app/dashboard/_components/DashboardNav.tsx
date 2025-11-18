@@ -1,6 +1,6 @@
 'use client'
 
-import { SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem } from "@/components/ui/sidebar"
+import { SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarMenuSub, SidebarMenuSubButton } from "@/components/ui/sidebar"
 import { Icons } from "@/components/icons"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -18,14 +18,15 @@ interface TeamWithStatus {
 interface DashboardNavProps {
   isAdmin: boolean;
   teams: TeamWithStatus[];
-  userTeamId?: number | null;
+  userTeams: { team_id: number }[];
 }
 
-export default function DashboardNav({ isAdmin, teams, userTeamId }: DashboardNavProps) {
+export default function DashboardNav({ isAdmin, teams, userTeams }: DashboardNavProps) {
     const pathname = usePathname()
     const [isTeamsOpen, setIsTeamsOpen] = useState(pathname.startsWith('/dashboard/teams'));
     
-    const visibleTeams = isAdmin ? teams : teams.filter(team => team.id === userTeamId);
+    const userTeamIds = userTeams.map(t => t.team_id);
+    const visibleTeams = isAdmin ? teams : teams.filter(team => userTeamIds.includes(team.id));
 
     return (
         <SidebarMenu>

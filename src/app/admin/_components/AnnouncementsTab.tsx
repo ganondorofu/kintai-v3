@@ -44,8 +44,8 @@ import { Database, Tables } from "@/lib/types";
 import { PlusCircle, Edit, Trash2, Eye, EyeOff } from "lucide-react";
 import { User } from "@supabase/supabase-js";
 
-type AnnouncementWithUser = Tables<"announcements"> & {
-  users: { display_name: string | null } | null;
+type AnnouncementWithUser = Tables<"attendance", "announcements"> & {
+  author: { display_name: string | null } | null;
 };
 
 interface AnnouncementsTabProps {
@@ -108,7 +108,7 @@ export default function AnnouncementsTab({
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm("このお知らせを削除しますか？")) {
+    if (confirm("このお知らせを削除しますか？(ソフトデリート)")) {
       const result = await deleteAnnouncement(id);
       if (result.success) {
         toast({
@@ -212,7 +212,7 @@ export default function AnnouncementsTab({
             {announcements.filter(a => a.is_active).map((announcement) => (
               <TableRow key={announcement.id}>
                 <TableCell className="font-medium">{announcement.title}</TableCell>
-                <TableCell>{announcement.users?.display_name}</TableCell>
+                <TableCell>{announcement.author?.display_name}</TableCell>
                 <TableCell>
                   {format(new Date(announcement.created_at), "yyyy/MM/dd HH:mm", {
                     locale: ja,

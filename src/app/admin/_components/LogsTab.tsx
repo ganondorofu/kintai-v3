@@ -50,20 +50,25 @@ const getFieldNameJp = (fieldName: string) => {
         display_name: '表示名',
         generation: '期生',
         team_id: '班',
-        role: '役割',
+        is_admin: '役割',
+        status: '学籍',
+        student_number: '学籍番号',
         is_active: '有効/無効',
         card_id: 'カードID'
     }
     return map[fieldName] || fieldName;
 }
 
-const getRoleName = (role: string) => (role === '1' ? '管理者' : '部員');
-const getIsActiveName = (isActive: string) => (isActive === 'true' ? '有効' : '無効');
+const getRoleName = (role: string) => (role === 'true' ? '管理者' : '部員');
+const getStatusName = (status: string) => {
+    const map: Record<string, string> = { '0': '中学生', '1': '高校生', '2': 'OB/OG' };
+    return map[status] || status;
+}
 
 const formatValue = (field: string, value: string | null) => {
     if (value === null) return 'N/A';
-    if (field === 'role') return getRoleName(value);
-    if (field === 'is_active') return getIsActiveName(value);
+    if (field === 'is_admin') return getRoleName(value);
+    if (field === 'status') return getStatusName(value);
     if (field === 'generation') {
         const generationNumber = parseInt(value, 10);
         if (!isNaN(generationNumber)) {
@@ -166,6 +171,4 @@ export default function LogsTab({
           </TabsContent>
         </Tabs>
       </CardContent>
-    </Card>
-  );
-}
+    

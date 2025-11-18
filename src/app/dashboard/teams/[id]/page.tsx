@@ -124,11 +124,4 @@ export default async function TeamStatusPage({ params }: { params: { id: string 
                                 )}
                             </div>
                         )
-                    })}
-                </CardContent>
-            </Card>
-        </div>
-    )
-}
-
-    
+                    
