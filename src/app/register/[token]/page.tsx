@@ -23,7 +23,7 @@ async function RegisterPageImpl({ params }: { params: { token: string } }) {
     
     let fullProfile = null;
     if (session?.user?.user_metadata?.provider_id) {
-        const { data } = await supabase.from('users').select('*, teams(name)').eq('discord_id', session.user.user_metadata.provider_id).single();
+        const { data } = await supabase.schema('attendance').from('users').select('*, teams(name)').eq('discord_id', session.user.user_metadata.provider_id).single();
         fullProfile = data;
     }
 

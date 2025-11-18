@@ -17,7 +17,7 @@ import DashboardNav from "./_components/DashboardNav";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 async function UserProfile({ user }: { user: any }) {
-  const { data: profile } = await createSupabaseServerClient().from('users').select('display_name').eq('id', user.id).single();
+  const { data: profile } = await createSupabaseServerClient().schema('attendance').from('users').select('display_name').eq('id', user.id).single();
   const initials = profile?.display_name?.charAt(0).toUpperCase() || 'U';
   
   return (
@@ -98,7 +98,7 @@ export default async function DashboardLayout({
     return redirect("/login");
   }
 
-  const { data: profile, error } = await supabase.from('users').select('id, role, team_id').eq('id', user.id).single();
+  const { data: profile, error } = await supabase.schema('attendance').from('users').select('id, role, team_id').eq('id', user.id).single();
 
   if (!profile) {
     await supabase.auth.signOut();

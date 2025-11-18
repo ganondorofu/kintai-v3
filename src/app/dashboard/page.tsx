@@ -29,7 +29,7 @@ export default async function DashboardPage() {
         redirect('/login');
     }
 
-    const { data: profile } = await supabase.from('users').select('*, teams(name)').eq('id', user!.id).single();
+    const { data: profile } = await supabase.schema('attendance').from('users').select('*, teams(name)').eq('id', user!.id).single();
     
     if (!profile) {
         redirect('/register/unregistered');
@@ -39,7 +39,7 @@ export default async function DashboardPage() {
     const userCreatedAtDate = format(new Date(profile!.created_at), 'yyyy-MM-dd');
 
     const [attendancesResult, totalActivityTime] = await Promise.all([
-      supabase.from('attendances').select('*').eq('user_id', user!.id).order('timestamp', { ascending: false }).limit(5),
+      supabase.schema('attendance').from('attendances').select('*').eq('user_id', user!.id).order('timestamp', { ascending: false }).limit(5),
       calculateTotalActivityTime(user!.id, 30)
     ]);
     
@@ -47,6 +47,7 @@ export default async function DashboardPage() {
 
     // 1. Correctly count distinct attendance days for the user in the last 30 days
     const { data: distinctDates, error: distinctDatesError } = await supabase
+      .schema('attendance')
       .from('attendances')
       .select('date')
       .eq('user_id', user!.id)
@@ -58,6 +59,7 @@ export default async function DashboardPage() {
     // 2. Get total number of active club days (days where at least one person attended) in the last 30 days,
     // but only since the user has been registered.
     const { data: totalClubActivityDates, error: totalClubActivityDatesError } = await supabase
+      .schema('attendance')
       .from('attendances')
       .select('date')
       .eq('type', 'in')
