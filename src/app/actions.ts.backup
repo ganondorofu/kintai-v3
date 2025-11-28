@@ -1,5 +1,4 @@
 
-
 'use server';
 
 import { createSupabaseAdminClient, createSupabaseServerClient } from '@/lib/supabase/server';
@@ -264,6 +263,78 @@ export async function signInWithDiscord(formData?: FormData) {
     }
 }
 
+export async function signInAsAnonymousAdmin() {
+    const adminSupabase = await createSupabaseAdminClient();
+    const supabase = await createSupabaseServerClient();
+    const email = 'admin@example.com';
+    const password = 'password';
+
+    const { data: { users }, error: listUsersError } = await adminSupabase.auth.admin.listUsers();
+    if (listUsersError) {
+        console.error('Error listing users:', listUsersError);
+        return redirect('/login?error=Failed to list users.');
+    }
+
+    let authUser = users.find(u => u.email === email);
+    let authUserId: string;
+
+    if (!authUser) {
+        const { data: newAuthUserData, error: createAuthUserError } = await adminSupabase.auth.admin.createUser({
+            email,
+            password,
+            email_confirm: true,
+        });
+
+        if (createAuthUserError || !newAuthUserData.user) {
+            console.error('Error creating anonymous admin auth user:', createAuthUserError);
+            return redirect(`/login?error=${createAuthUserError?.message || 'Failed to create user'}`);
+        }
+        authUser = newAuthUserData.user;
+    }
+    
+    authUserId = authUser.id;
+
+    const { data: memberProfile } = await adminSupabase.schema('member').from('members').select('supabase_auth_user_id').eq('supabase_auth_user_id', authUserId).single();
+    if (!memberProfile) {
+        const { error: createMemberError } = await adminSupabase.schema('member').from('members').insert({
+            supabase_auth_user_id: authUserId,
+            display_name: '匿名管理者',
+            discord_uid: `anonymous_admin_${randomUUID().slice(0,8)}`,
+            generation: 0,
+            status: 2,
+            is_admin: true,
+        });
+        if (createMemberError) {
+             return redirect(`/login?error=${createMemberError.message}`);
+        }
+    }
+
+    const { data: attendanceProfile } = await adminSupabase.schema('attendance').from('users').select('supabase_auth_user_id').eq('supabase_auth_user_id', authUserId).single();
+    if (!attendanceProfile) {
+         const { error: createAttendanceUserError } = await adminSupabase.schema('attendance').from('users').insert({
+            supabase_auth_user_id: authUserId,
+            card_id: `admin_${randomUUID().slice(0,8)}`,
+        });
+        if (createAttendanceUserError) {
+            return redirect(`/login?error=${createAttendanceUserError.message}`);
+        }
+    }
+
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+    });
+
+    if (signInError) {
+        console.error('Sign in error:', signInError);
+        return redirect(`/login?error=${signInError.message}`);
+    }
+
+    revalidatePath('/', 'layout');
+    redirect('/dashboard');
+}
+
+
 export async function signOut() {
     const supabase = await createSupabaseServerClient();
     await supabase.auth.signOut();
@@ -272,11 +343,11 @@ export async function signOut() {
 }
 
 export async function getMonthlyAttendance(userId: string, month: Date) {
-  const supabase = await createSupabaseAdminClient();
+  const supabase = await createSupabaseServerClient();
   const start = startOfMonth(month);
   const end = endOfMonth(month);
 
-  const { data: attendances, error } = await supabase
+  const { data, error } = await supabase
     .schema('attendance')
     .from('attendances')
     .select('date, type')
@@ -291,20 +362,14 @@ export async function getMonthlyAttendance(userId: string, month: Date) {
   }
 
   const dailyStatus: Record<string, 'in' | 'out' | 'mixed'> = {};
-  attendances.forEach(att => {
+  data.forEach(att => {
     if (!att.date) return;
-    if (att.type === 'in') {
-        dailyStatus[att.date] = 'in'; // 一度でも 'in' があれば、その日は 'in' とする
-    } else if (!dailyStatus[att.date]) {
-        dailyStatus[att.date] = 'out';
-    }
+    dailyStatus[att.date] = att.type as 'in' | 'out';
   });
 
-  return Object.keys(dailyStatus)
-    .filter(date => dailyStatus[date] === 'in')
-    .map(date => ({
-        date,
-        status: 'in' as const
+  return Object.keys(dailyStatus).map(date => ({
+    date,
+    status: dailyStatus[date]
   }));
 }
 
@@ -545,7 +610,7 @@ export async function createTeam(name: string) {
     return { success: true, message: '班を作成しました。'};
 }
 
-export async function updateTeam(id: number, name: string) {
+export async function updateTeam(id: string, name: string) {
     const supabase = await createSupabaseAdminClient();
     const { error } = await supabase.schema('member').from('teams').update({ name }).eq('id', id);
     if(error) return { success: false, message: error.message };
@@ -554,7 +619,7 @@ export async function updateTeam(id: number, name: string) {
     return { success: true, message: '班を更新しました。'};
 }
 
-export async function deleteTeam(id: number) {
+export async function deleteTeam(id: string) {
     const supabase = await createSupabaseAdminClient();
     const { count } = await supabase.schema('member').from('member_team_relations').select('*', { count: 'exact' }).eq('team_id', id);
 
@@ -657,7 +722,7 @@ export async function getTeamWithMembersStatus(teamId: number) {
     const { data: team, error: teamError } = await supabase.schema('member').from('teams').select('*').eq('id', String(teamId)).single();
     if(teamError || !team) return { team: null, members: [], stats: null, error: teamError?.message };
 
-    const { data, error: membersError } = await (supabase.schema('member') as any)
+    const { data, error: membersError } = await (supabase.schema('attendance') as any)
         .from('users_with_latest_attendance_and_team')
         .select(`
             id,
@@ -822,7 +887,8 @@ export async function updateAllUserDisplayNames(): Promise<{ success: boolean, m
     const { data: users, error: usersError } = await supabase
         .schema('member')
         .from('members')
-        .select('supabase_auth_user_id, discord_uid');
+        .select('supabase_auth_user_id, discord_uid')
+        .not('discord_uid', 'like', 'anonymous_admin_%');
 
     if (usersError) {
         return { success: false, message: `ユーザーの取得に失敗しました: ${usersError.message}`, count: 0 };
@@ -874,15 +940,21 @@ export async function getOverallStats(days: number = 30) {
     
     // 今日の出席人数を取得
     const today = format(new Date(), 'yyyy-MM-dd');
-    const { data: todayAttendances, error: todayAttError } = await supabase
-      .schema('attendance')
-      .from('attendances')
-      .select('user_id', { count: 'exact' })
-      .eq('date', today)
-      .eq('type', 'in');
-
-    if (todayAttError) console.error('Error fetching today attendees:', todayAttError);
-    const todayActiveUsers = todayAttendances ? new Set(todayAttendances.map(a => a.user_id)).size : 0;
+    const { data: todayAttendances } = await supabase
+        .schema('attendance')
+        .from('attendances')
+        .select('user_id, type')
+        .eq('date', today)
+        .order('timestamp', { ascending: false });
+    
+    // 今日出勤したユニークなユーザー（最後の記録がinの人）
+    const userLastStatus = new Map<string, string>();
+    todayAttendances?.forEach(att => {
+        if (!userLastStatus.has(att.user_id)) {
+            userLastStatus.set(att.user_id, att.type);
+        }
+    });
+    const todayActiveUsers = Array.from(userLastStatus.values()).filter(type => type === 'in').length;
     
     // 総登録部員数
     const { count: totalMembers } = await supabase
@@ -891,41 +963,40 @@ export async function getOverallStats(days: number = 30) {
         .select('*', { count: 'exact', head: true });
     
     // 過去N日間のユニークな出勤日数
-    const { data: distinctDates, error: distinctDatesError } = await supabase
+    const { data: distinctDates } = await supabase
         .schema('attendance')
         .from('attendances')
         .select('date')
+        .eq('type', 'in')
         .gte('date', startDate);
     
-    if(distinctDatesError) console.error("Error fetching distinct dates", distinctDatesError);
     const activeDaysCount = distinctDates ? new Set(distinctDates.map(d => d.date)).size : 0;
     
     // 過去N日間の総活動時間（全員の合計）
-    const { data: allAttendances, error: allAttError } = await supabase
+    const { data: allAttendances } = await supabase
         .schema('attendance')
         .from('attendances')
         .select('user_id, type, timestamp')
         .gte('date', startDate)
         .order('user_id')
         .order('timestamp', { ascending: true });
-
-    if(allAttError) console.error("Error fetching all attendances", allAttError);
     
     let totalActivityHours = 0;
     if (allAttendances) {
-        const userSessions = new Map<string, Date | null>();
+        const userSessions = new Map<string, { in: Date | null }>();
         
         for (const att of allAttendances) {
+            const session = userSessions.get(att.user_id) || { in: null };
+            
             if (att.type === 'in') {
-                userSessions.set(att.user_id, new Date(att.timestamp));
-            } else if (att.type === 'out') {
-                const inTime = userSessions.get(att.user_id);
-                if (inTime) {
-                    const duration = differenceInSeconds(new Date(att.timestamp), inTime) / 3600;
-                    totalActivityHours += duration;
-                    userSessions.set(att.user_id, null);
-                }
+                session.in = new Date(att.timestamp);
+            } else if (att.type === 'out' && session.in) {
+                const duration = differenceInSeconds(new Date(att.timestamp), session.in) / 3600;
+                totalActivityHours += duration;
+                session.in = null;
             }
+            
+            userSessions.set(att.user_id, session);
         }
     }
     
@@ -943,117 +1014,107 @@ export async function getDailyAttendanceCounts(year: number, month: number) {
     const start = startOfMonth(new Date(year, month - 1));
     const end = endOfMonth(new Date(year, month - 1));
     
-    const { data: attendances, error } = await supabase
+    const { data: attendances } = await supabase
         .schema('attendance')
         .from('attendances')
-        .select('date, user_id')
-        .eq('type', 'in')
+        .select('date, user_id, type')
         .gte('date', format(start, 'yyyy-MM-dd'))
-        .lte('date', format(end, 'yyyy-MM-dd'));
+        .lte('date', format(end, 'yyyy-MM-dd'))
+        .order('date')
+        .order('timestamp', { ascending: false });
+    
+    const dailyCounts = new Map<string, number>();
+    
+    if (attendances) {
+        const dateUserStatus = new Map<string, Map<string, string>>();
         
-    if (error) {
-        console.error('Error fetching daily attendance counts:', error);
-        return {};
+        attendances.forEach(att => {
+            const key = att.date;
+            if (!dateUserStatus.has(key)) {
+                dateUserStatus.set(key, new Map());
+            }
+            const userMap = dateUserStatus.get(key)!;
+            if (!userMap.has(att.user_id)) {
+                userMap.set(att.user_id, att.type);
+            }
+        });
+        
+        dateUserStatus.forEach((userMap, date) => {
+            const count = Array.from(userMap.values()).filter(type => type === 'in').length;
+            dailyCounts.set(date, count);
+        });
     }
     
-    const dailyCounts = new Map<string, Set<string>>();
-    
-    attendances?.forEach(att => {
-        if (!att.date) return;
-        if (!dailyCounts.has(att.date)) {
-            dailyCounts.set(att.date, new Set());
-        }
-        dailyCounts.get(att.date)!.add(att.user_id);
-    });
-    
-    const result: Record<string, number> = {};
-    dailyCounts.forEach((users, date) => {
-        result[date] = users.size;
-    });
-
-    return result;
+    return Object.fromEntries(dailyCounts);
 }
-
 
 // 特定日の詳細な出席情報を取得（班別・学年別）
 export async function getDailyAttendanceDetails(date: string) {
     const supabase = await createSupabaseAdminClient();
-
-    // その日に出勤したユニークなユーザーIDを取得
-    const { data: attendanceData, error: attendanceError } = await supabase
+    
+    const { data: attendances } = await supabase
         .schema('attendance')
         .from('attendances')
-        .select('user_id')
+        .select(`
+            user_id,
+            type,
+            timestamp
+        `)
         .eq('date', date)
-        .eq('type', 'in');
-
-    if (attendanceError) {
-        console.error("Error fetching daily attendance user IDs:", attendanceError);
-        return { byTeam: {}, byGrade: {}, byTeamAndGrade: {}, total: 0 };
+        .order('timestamp', { ascending: false });
+    
+    if (!attendances) {
+        return { byTeam: {}, byGrade: {}, total: 0 };
     }
-
-    const activeUserIds = [...new Set(attendanceData.map(a => a.user_id))];
-
+    
+    // 各ユーザーの最後の状態を取得
+    const userLastStatus = new Map<string, string>();
+    attendances.forEach(att => {
+        if (!userLastStatus.has(att.user_id)) {
+            userLastStatus.set(att.user_id, att.type);
+        }
+    });
+    
+    const activeUserIds = Array.from(userLastStatus.entries())
+        .filter(([_, type]) => type === 'in')
+        .map(([userId, _]) => userId);
+    
     if (activeUserIds.length === 0) {
-        return { byTeam: {}, byGrade: {}, byTeamAndGrade: {}, total: 0 };
+        return { byTeam: {}, byGrade: {}, total: 0 };
     }
-
+    
     // ユーザー情報を取得
-    const { data: members, error: membersError } = await supabase
+    const { data: members } = await supabase
         .schema('member')
         .from('members')
         .select(`
             supabase_auth_user_id,
             generation,
             member_team_relations(
-                team_id,
                 teams(name)
             )
         `)
         .in('supabase_auth_user_id', activeUserIds);
-
-    if (membersError) {
-        console.error("Error fetching member details:", membersError);
-        return { byTeam: {}, byGrade: {}, byTeamAndGrade: {}, total: 0 };
-    }
-
+    
     const byTeam: Record<string, number> = {};
     const byGrade: Record<string, number> = {};
-    const byTeamAndGrade: Record<string, Record<string, number>> = {};
-
+    
     members?.forEach(member => {
-        // 複数班に所属している場合、team_idが最小のものを優先
-        // @ts-ignore
-        const teamRelations = member.member_team_relations || [];
-        
-        // team_idでソートして最初のものを選択
-        const primaryTeamRelation = teamRelations.sort((a: any, b: any) => {
-            return (a.team_id || '').localeCompare(b.team_id || '');
-        })[0];
-        
-        // @ts-ignore
-        const teamName = primaryTeamRelation?.teams?.name || '未所属';
+        // 班別
+        const teamName = member.member_team_relations?.[0]?.teams?.name || '未所属';
         byTeam[teamName] = (byTeam[teamName] || 0) + 1;
-
+        
         // 学年別
         const grade = member.generation ? `${member.generation}期` : '不明';
         byGrade[grade] = (byGrade[grade] || 0) + 1;
-
-        // 班別×学年別
-        if (!byTeamAndGrade[teamName]) {
-            byTeamAndGrade[teamName] = {};
-        }
-        byTeamAndGrade[teamName][grade] = (byTeamAndGrade[teamName][grade] || 0) + 1;
     });
-
+    
     return {
         byTeam,
         byGrade,
-        byTeamAndGrade,
         total: activeUserIds.length,
     };
 }
-
 
 // カードIDを変更
 export async function updateUserCardId(userId: string, newCardId: string) {
@@ -1089,141 +1150,3 @@ export async function updateUserCardId(userId: string, newCardId: string) {
     revalidatePath('/admin');
     return { success: true, message: 'カードIDを更新しました。' };
 }
-
-// 旧システムからカードIDを引き継ぐ
-export async function migrateLegacyCardId(userId: string, firstname?: string, lastname?: string, legacyUid?: string) {
-    'use server';
-    
-    const supabase = await createSupabaseAdminClient();
-    
-    try {
-        const { searchLegacyUserByName, searchLegacyUsersByPartialName } = await import('@/lib/firebase/legacy');
-        
-        let legacyUser = null;
-        
-        // legacyUidが指定されている場合は、そのユーザーを検索
-        if (legacyUid) {
-            const allUsers = await searchLegacyUsersByPartialName('');
-            legacyUser = allUsers.find(u => u.uid === legacyUid) || null;
-        } 
-        // firstname/lastnameが指定されている場合は名前で検索
-        else if (firstname && lastname) {
-            legacyUser = await searchLegacyUserByName(firstname, lastname);
-        } else {
-            return { success: false, message: 'ユーザー情報が不足しています。' };
-        }
-        
-        if (!legacyUser || !legacyUser.cardId) {
-            return { success: false, message: '旧システムにユーザーが見つかりませんでした。' };
-        }
-        
-        // カードIDを正規化
-        const normalizedCardId = legacyUser.cardId.replace(/:/g, '').toLowerCase();
-        
-        // 既存のカードIDと重複していないか確認
-        const { data: existingCard } = await supabase
-            .schema('attendance')
-            .from('users')
-            .select('supabase_auth_user_id')
-            .eq('card_id', normalizedCardId)
-            .single();
-        
-        if (existingCard && existingCard.supabase_auth_user_id !== userId) {
-            return { success: false, message: 'このカードIDは既に別のユーザーに登録されています。' };
-        }
-        
-        // attendance.usersレコードの存在確認
-        const { data: existingUser } = await supabase
-            .schema('attendance')
-            .from('users')
-            .select('supabase_auth_user_id')
-            .eq('supabase_auth_user_id', userId)
-            .single();
-        
-        if (existingUser) {
-            // 既存レコードがある場合は更新
-            const { error } = await supabase
-                .schema('attendance')
-                .from('users')
-                .update({ card_id: normalizedCardId })
-                .eq('supabase_auth_user_id', userId);
-            
-            if (error) {
-                console.error('Legacy card ID migration error (update):', error);
-                return { success: false, message: 'カードIDの移行に失敗しました。' };
-            }
-        } else {
-            // レコードがない場合は新規作成
-            const { error } = await supabase
-                .schema('attendance')
-                .from('users')
-                .insert({
-                    supabase_auth_user_id: userId,
-                    card_id: normalizedCardId
-                });
-            
-            if (error) {
-                console.error('Legacy card ID migration error (insert):', error);
-                return { success: false, message: 'カードIDの登録に失敗しました。' };
-            }
-        }
-        
-        revalidatePath('/dashboard');
-        return { success: true, message: `カードID (${normalizedCardId}) を引き継ぎました。`, cardId: normalizedCardId };
-    } catch (error) {
-        console.error('Legacy migration error:', error);
-        return { success: false, message: '旧システムへの接続に失敗しました。' };
-    }
-}
-
-// 旧システムのユーザーを部分検索
-export async function searchLegacyUsers(searchTerm: string) {
-    'use server';
-    
-    try {
-        const { searchLegacyUsersByPartialName } = await import('@/lib/firebase/legacy');
-        const users = await searchLegacyUsersByPartialName(searchTerm);
-        return { success: true, users };
-    } catch (error) {
-        console.error('Search error:', error);
-        return { success: false, users: [], message: '検索に失敗しました。' };
-    }
-}
-
-// Discordサーバーに所属しているか確認
-export async function checkDiscordMembership(discordUid: string) {
-    'use server';
-    
-    try {
-        const API_BASE = process.env.NEXT_PUBLIC_STEM_BOT_API_URL;
-        const API_TOKEN = process.env.STEM_BOT_API_BEARER_TOKEN;
-        
-        if (!API_BASE || !API_TOKEN) {
-            return { success: false, isInServer: false, message: 'Discord Bot APIの設定が見つかりません。' };
-        }
-        
-        const response = await fetch(`${API_BASE}/api/member/status?discord_uid=${discordUid}`, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${API_TOKEN}`,
-            },
-        });
-        
-        if (!response.ok) {
-            return { success: false, isInServer: false, message: 'Discord APIへの接続に失敗しました。' };
-        }
-        
-        const data = await response.json();
-        
-        return { 
-            success: true, 
-            isInServer: data.is_in_server,
-            nickname: data.current_nickname,
-            roles: data.current_roles
-        };
-    } catch (error) {
-        console.error('Discord membership check error:', error);
-        return { success: false, isInServer: false, message: 'Discordサーバーの確認に失敗しました。' };
-    }
-}
-
