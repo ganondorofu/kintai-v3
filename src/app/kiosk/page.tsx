@@ -14,6 +14,7 @@ type KioskState = 'idle' | 'input' | 'success' | 'error' | 'register' | 'qr' | '
 type AttendanceType = 'in' | 'out' | null;
 
 const AUTO_RESET_DELAY = 5000;
+const REQUEST_TIMEOUT_MS = 8000;
 
 export default function KioskPage() {
   const [kioskState, setKioskState] = useState<KioskState>('loading');
@@ -56,29 +57,51 @@ export default function KioskPage() {
     const stateAtSubmission = kioskState;
     setInputValue(''); 
 
-    if (stateAtSubmission === 'register') {
-      const result = await createTempRegistration(cardId);
-      if (result.success && result.token) {
-        setQrToken(result.token);
-        setQrExpiry(Date.now() + 30 * 60 * 1000);
-        setKioskState('qr');
+    const withTimeout = async <T,>(promise: Promise<T>) => {
+      return new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('timeout')), REQUEST_TIMEOUT_MS);
+        promise
+          .then((value) => {
+            clearTimeout(timer);
+            resolve(value);
+          })
+          .catch((error) => {
+            clearTimeout(timer);
+            reject(error);
+          });
+      });
+    };
+
+    try {
+      if (stateAtSubmission === 'register') {
+        const result = await withTimeout(createTempRegistration(cardId));
+        if (result.success && result.token) {
+          setQrToken(result.token);
+          setQrExpiry(Date.now() + 30 * 60 * 1000);
+          setKioskState('qr');
+        } else {
+          setKioskState('error');
+          setMessage(result.message);
+          setSubMessage('');
+        }
       } else {
-        setKioskState('error');
-        setMessage(result.message);
-        setSubMessage('');
+        const result = await withTimeout(recordAttendance(cardId));
+        if (result.success && result.user) {
+          setKioskState('success');
+          setAttendanceType(result.type);
+          setMessage(`${result.user.display_name}`);
+          setSubMessage(result.message);
+        } else {
+          setKioskState('error');
+          setMessage(result.message);
+          setSubMessage('登録するには「/」キーを押してください');
+        }
       }
-    } else {
-      const result = await recordAttendance(cardId);
-      if (result.success && result.user) {
-        setKioskState('success');
-        setAttendanceType(result.type);
-        setMessage(`${result.user.display_name}`);
-        setSubMessage(result.message);
-      } else {
-        setKioskState('error');
-        setMessage(result.message);
-        setSubMessage('登録するには「/」キーを押してください');
-      }
+    } catch (error) {
+      console.error('Kiosk request failed:', error);
+      setKioskState('error');
+      setMessage('通信に失敗しました。');
+      setSubMessage('もう一度タッチしてください');
     }
   }, [kioskState]);
 
