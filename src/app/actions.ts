@@ -23,6 +23,7 @@ const timeZone = 'Asia/Tokyo';
 
 export async function recordAttendance(cardId: string): Promise<{ success: boolean; message: string; user: { display_name: string | null; } | null; type: 'in' | 'out' | null; }> {
   const TIMEOUT_MS = 10000; // 10秒タイムアウト
+  const traceId = randomUUID();
   
   const timeoutPromise = new Promise<never>((_, reject) => {
     setTimeout(() => reject(new Error('TIMEOUT')), TIMEOUT_MS);
@@ -30,27 +31,27 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
 
   try {
     return await Promise.race([
-      recordAttendanceInternal(cardId),
+      recordAttendanceInternal(cardId, traceId),
       timeoutPromise
     ]);
   } catch (error) {
     if (error instanceof Error && error.message === 'TIMEOUT') {
-      console.error(`[RECORD_ATTENDANCE] ❌ Timeout after ${TIMEOUT_MS}ms - Card ID: ${cardId.substring(0, 10)}...`);
+      console.error(`[RECORD_ATTENDANCE:${traceId}] ❌ Timeout after ${TIMEOUT_MS}ms - Card ID: ${cardId.substring(0, 10)}...`);
       return { success: false, message: 'サーバーの応答がタイムアウトしました。もう一度お試しください。', user: null, type: null };
     }
-    console.error('[RECORD_ATTENDANCE] Unexpected error:', error);
+    console.error(`[RECORD_ATTENDANCE:${traceId}] Unexpected error:`, error);
     return { success: false, message: '予期しないエラーが発生しました。', user: null, type: null };
   }
 }
 
-async function recordAttendanceInternal(cardId: string): Promise<{ success: boolean; message: string; user: { display_name: string | null; } | null; type: 'in' | 'out' | null; }> {
+async function recordAttendanceInternal(cardId: string, traceId: string): Promise<{ success: boolean; message: string; user: { display_name: string | null; } | null; type: 'in' | 'out' | null; }> {
   const startTime = Date.now();
-  console.log(`[RECORD_ATTENDANCE] Start - Card ID: ${cardId.substring(0, 10)}...`);
+  console.log(`[RECORD_ATTENDANCE:${traceId}] Start - Card ID: ${cardId.substring(0, 10)}...`);
 
   const supabaseStart = Date.now();
   const supabase = await createSupabaseAdminClient();
   const supabaseDuration = Date.now() - supabaseStart;
-  console.log(`[RECORD_ATTENDANCE] Supabase client creation: ${supabaseDuration}ms`);
+  console.log(`[RECORD_ATTENDANCE:${traceId}] Supabase client creation: ${supabaseDuration}ms`);
 
   const normalizedCardId = cardId.replace(/:/g, '').toLowerCase();
 
@@ -62,11 +63,11 @@ async function recordAttendanceInternal(cardId: string): Promise<{ success: bool
     .eq('card_id', normalizedCardId)
     .single();
   const userLookupDuration = Date.now() - userLookupStart;
-  console.log(`[RECORD_ATTENDANCE] User lookup query: ${userLookupDuration}ms`);
+  console.log(`[RECORD_ATTENDANCE:${traceId}] User lookup query: ${userLookupDuration}ms`);
 
   if (attendanceUserError || !attendanceUser) {
     const duration = Date.now() - startTime;
-    console.log(`[RECORD_ATTENDANCE] Failed - Unregistered card (${duration}ms)`);
+    console.log(`[RECORD_ATTENDANCE:${traceId}] Failed - Unregistered card (${duration}ms)`);
     return { success: false, message: '未登録のカードです。', user: null, type: null };
   }
 
@@ -88,7 +89,7 @@ async function recordAttendanceInternal(cardId: string): Promise<{ success: bool
       .maybeSingle()
   ]);
   const parallelDuration = Date.now() - parallelStart;
-  console.log(`[RECORD_ATTENDANCE] Parallel queries (auth + last attendance): ${parallelDuration}ms`);
+  console.log(`[RECORD_ATTENDANCE:${traceId}] Parallel queries (auth + last attendance): ${parallelDuration}ms`);
 
   const { data: authUser } = authUserResult;
   const { data: lastAttendance, error: lastAttendanceError } = lastAttendanceResult;
@@ -101,9 +102,9 @@ async function recordAttendanceInternal(cardId: string): Promise<{ success: bool
   }
 
   if (lastAttendanceError) {
-      console.error('Error fetching last attendance:', lastAttendanceError);
+      console.error(`[RECORD_ATTENDANCE:${traceId}] Error fetching last attendance:`, lastAttendanceError);
       const duration = Date.now() - startTime;
-      console.log(`[RECORD_ATTENDANCE] Failed - Last attendance error (${duration}ms)`);
+      console.log(`[RECORD_ATTENDANCE:${traceId}] Failed - Last attendance error (${duration}ms)`);
       return { success: false, message: '過去の打刻記録の取得中にエラーが発生しました。', user: null, type: null };
   }
 
@@ -122,22 +123,22 @@ async function recordAttendanceInternal(cardId: string): Promise<{ success: bool
       date: formatInTimeZone(now, timeZone, 'yyyy-MM-dd')
     });
   const insertDuration = Date.now() - insertStart;
-  console.log(`[RECORD_ATTENDANCE] Attendance insert: ${insertDuration}ms`);
+  console.log(`[RECORD_ATTENDANCE:${traceId}] Attendance insert: ${insertDuration}ms`);
 
   if (insertError) {
-    console.error('Attendance insert error:', insertError);
+    console.error(`[RECORD_ATTENDANCE:${traceId}] Attendance insert error:`, insertError);
     const duration = Date.now() - startTime;
-    console.log(`[RECORD_ATTENDANCE] Failed - Insert error (${duration}ms)`);
+    console.log(`[RECORD_ATTENDANCE:${traceId}] Failed - Insert error (${duration}ms)`);
     return { success: false, message: '打刻処理中にエラーが発生しました。', user: null, type: null };
   }
 
   const totalDuration = Date.now() - startTime;
-  console.log(`[RECORD_ATTENDANCE] Success - ${attendanceType} (${totalDuration}ms) - User: ${userDisplayName}`);
+  console.log(`[RECORD_ATTENDANCE:${traceId}] Success - ${attendanceType} (${totalDuration}ms) - User: ${userDisplayName}`);
 
   const revalidateStart = Date.now();
   revalidatePath('/dashboard/teams');
   const revalidateDuration = Date.now() - revalidateStart;
-  console.log(`[RECORD_ATTENDANCE] Revalidate path: ${revalidateDuration}ms`);
+  console.log(`[RECORD_ATTENDANCE:${traceId}] Revalidate path: ${revalidateDuration}ms`);
   return {
     success: true,
     message: attendanceType === 'in' ? '出勤しました' : '退勤しました',
@@ -155,40 +156,51 @@ const processSubmission = async (submissionType: 'idle' | 'register', cardId: st
   }
 
 export async function createTempRegistration(cardId: string): Promise<{ success: boolean; token?: string; message: string }> {
+  const traceId = randomUUID();
+  const startTime = Date.now();
   const supabase = await createSupabaseAdminClient();
   const normalizedCardId = cardId.replace(/:/g, '').toLowerCase();
+  console.log(`[CREATE_TEMP_REG:${traceId}] Start - Card ID: ${cardId.substring(0, 10)}...`);
   
+  const existingStart = Date.now();
   const { data: existingUser, error: existingUserError } = await supabase
     .schema('attendance')
     .from('users')
     .select('supabase_auth_user_id')
     .eq('card_id', normalizedCardId)
     .single();
+  console.log(`[CREATE_TEMP_REG:${traceId}] User lookup: ${Date.now() - existingStart}ms`);
 
   if (existingUserError && existingUserError.code !== 'PGRST116') { // Ignore "No rows found" error
-    console.error("Error checking for existing card:", existingUserError);
+    console.error(`[CREATE_TEMP_REG:${traceId}] Error checking for existing card:`, existingUserError);
     return { success: false, message: "カード情報の確認中にデータベースエラーが発生しました。" };
   }
   
   if (existingUser) {
+    console.log(`[CREATE_TEMP_REG:${traceId}] Already registered card`);
     return { success: false, message: 'このカードは既に登録されています。' };
   }
 
   // Find and delete previous incomplete registrations for this card
+  const cleanupStart = Date.now();
   await supabase.schema('attendance').from('temp_registrations').delete().match({ card_id: normalizedCardId, is_used: false });
+  console.log(`[CREATE_TEMP_REG:${traceId}] Cleanup: ${Date.now() - cleanupStart}ms`);
 
   const token = `qr_${randomUUID()}`;
   const expires_at = new Date(Date.now() + 30 * 60 * 1000).toISOString();
   
+  const insertStart = Date.now();
   const { error } = await supabase.schema('attendance').from('temp_registrations').insert(
     { card_id: normalizedCardId, qr_token: token, expires_at: expires_at, is_used: false }
   );
+  console.log(`[CREATE_TEMP_REG:${traceId}] Insert: ${Date.now() - insertStart}ms`);
   
   if (error) {
-    console.error("Temp registration error:", error);
+    console.error(`[CREATE_TEMP_REG:${traceId}] Temp registration error:`, error);
     return { success: false, message: "仮登録中にエラーが発生しました。" };
   }
 
+  console.log(`[CREATE_TEMP_REG:${traceId}] Success (${Date.now() - startTime}ms)`);
   return { success: true, token, message: "QRコードを生成しました。" };
 }
 
