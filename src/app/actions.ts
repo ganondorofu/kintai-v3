@@ -17,24 +17,32 @@ type Team = Tables<'member', 'teams'>;
 type UserWithTeam = Member & { teams: Team[] | null };
 
 export async function recordAttendance(cardId: string): Promise<{ success: boolean; message: string; user: { display_name: string | null; } | null; type: 'in' | 'out' | null; }> {
+  const traceId = randomUUID();
+  const startedAt = Date.now();
   const supabase = createSupabaseAdminClient();
   
   const normalizedCardId = cardId.replace(/:/g, '').toLowerCase();
+  const cardIdSuffix = normalizedCardId.slice(-6);
+  console.log(`[recordAttendance:${traceId}] start card=***${cardIdSuffix}`);
 
+  const tUserStart = Date.now();
   const { data: attendanceUser, error: attendanceUserError } = await supabase
     .schema('attendance')
     .from('users')
     .select('supabase_auth_user_id, member:member_members!inner(display_name)')
     .eq('card_id', normalizedCardId)
     .single();
+  console.log(`[recordAttendance:${traceId}] users lookup ${Date.now() - tUserStart}ms`);
 
   if (attendanceUserError || !attendanceUser) {
+    console.warn(`[recordAttendance:${traceId}] user not found card=***${cardIdSuffix}`);
     return { success: false, message: '未登録のカードです。', user: null, type: null };
   }
 
   const userId = attendanceUser.supabase_auth_user_id;
   const userDisplayName = attendanceUser.member?.display_name || '名無しさん';
 
+  const tLastStart = Date.now();
   const { data: lastAttendance, error: lastAttendanceError } = await supabase
     .schema('attendance')
     .from('attendances')
@@ -43,25 +51,29 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
     .order('timestamp', { ascending: false })
     .limit(1)
     .maybeSingle();
+  console.log(`[recordAttendance:${traceId}] last attendance ${Date.now() - tLastStart}ms`);
 
   if (lastAttendanceError) {
-      console.error('Error fetching last attendance:', lastAttendanceError);
+      console.error(`[recordAttendance:${traceId}] Error fetching last attendance:`, lastAttendanceError);
       return { success: false, message: '過去の打刻記録の取得中にエラーが発生しました。', user: null, type: null };
   }
 
   const attendanceType = lastAttendance?.type === 'in' ? 'out' : 'in';
 
+  const tInsertStart = Date.now();
   const { error: insertError } = await supabase
     .schema('attendance')
     .from('attendances')
     .insert({ user_id: userId, type: attendanceType, card_id: normalizedCardId });
+  console.log(`[recordAttendance:${traceId}] insert ${Date.now() - tInsertStart}ms`);
 
   if (insertError) {
-    console.error('Attendance insert error:', insertError);
+    console.error(`[recordAttendance:${traceId}] Attendance insert error:`, insertError);
     return { success: false, message: '打刻処理中にエラーが発生しました。', user: null, type: null };
   }
   
   revalidatePath('/dashboard/teams');
+  console.log(`[recordAttendance:${traceId}] done total=${Date.now() - startedAt}ms`);
   return { 
     success: true, 
     message: attendanceType === 'in' ? '出勤しました' : '退勤しました',
@@ -72,40 +84,52 @@ export async function recordAttendance(cardId: string): Promise<{ success: boole
 
 
 export async function createTempRegistration(cardId: string): Promise<{ success: boolean; token?: string; message: string }> {
+  const traceId = randomUUID();
+  const startedAt = Date.now();
   const supabase = createSupabaseAdminClient();
   const normalizedCardId = cardId.replace(/:/g, '').toLowerCase();
+  const cardIdSuffix = normalizedCardId.slice(-6);
+  console.log(`[createTempRegistration:${traceId}] start card=***${cardIdSuffix}`);
   
+  const tExistingStart = Date.now();
   const { data: existingUser, error: existingUserError } = await supabase
     .schema('attendance')
     .from('users')
     .select('supabase_auth_user_id')
     .eq('card_id', normalizedCardId)
     .single();
+  console.log(`[createTempRegistration:${traceId}] users lookup ${Date.now() - tExistingStart}ms`);
 
   if (existingUserError && existingUserError.code !== 'PGRST116') { // Ignore "No rows found" error
-    console.error("Error checking for existing user:", existingUserError);
+    console.error(`[createTempRegistration:${traceId}] Error checking for existing user:`, existingUserError);
     return { success: false, message: "ユーザーの確認中にエラーが発生しました。" };
   }
   
   if (existingUser) {
+    console.warn(`[createTempRegistration:${traceId}] already registered card=***${cardIdSuffix}`);
     return { success: false, message: 'このカードは既に登録されています。' };
   }
 
   // Find and delete previous incomplete registrations for this card
+  const tCleanupStart = Date.now();
   await supabase.schema('attendance').from('temp_registrations').delete().match({ card_id: normalizedCardId, is_used: false });
+  console.log(`[createTempRegistration:${traceId}] cleanup ${Date.now() - tCleanupStart}ms`);
 
   const token = `qr_${randomUUID()}`;
   const expires_at = new Date(Date.now() + 30 * 60 * 1000).toISOString();
   
+  const tInsertStart = Date.now();
   const { error } = await supabase.schema('attendance').from('temp_registrations').insert(
     { card_id: normalizedCardId, qr_token: token, expires_at: expires_at, is_used: false }
   );
+  console.log(`[createTempRegistration:${traceId}] insert ${Date.now() - tInsertStart}ms`);
   
   if (error) {
-    console.error("Temp registration error:", error);
+    console.error(`[createTempRegistration:${traceId}] Temp registration error:`, error);
     return { success: false, message: "仮登録中にエラーが発生しました。" };
   }
 
+  console.log(`[createTempRegistration:${traceId}] done total=${Date.now() - startedAt}ms`);
   return { success: true, token, message: "QRコードを生成しました。" };
 }
 
