@@ -55,81 +55,29 @@ async function recordAttendanceInternal(cardId: string, traceId: string): Promis
 
   const normalizedCardId = cardId.replace(/:/g, '').toLowerCase();
 
-  // Step 1: Look up user by card_id (with cross-schema JOIN for display_name)
-  const userLookupStart = Date.now();
-  const { data: attendanceUser, error: attendanceUserError } = await supabase
-    .schema('attendance')
-    .from('users')
-    .select('supabase_auth_user_id, member:member_members!inner(display_name)')
-    .eq('card_id', normalizedCardId)
-    .single();
-  const userLookupDuration = Date.now() - userLookupStart;
-  console.log(`[RECORD_ATTENDANCE:${traceId}] User lookup query: ${userLookupDuration}ms`);
+  // Single RPC call: lookup + check last attendance + insert (1 HTTP request instead of 3)
+  const rpcStart = Date.now();
+  const { data, error } = await supabase.schema('attendance').rpc('record_attendance_by_card', {
+    p_card_id: normalizedCardId,
+  });
+  const rpcDuration = Date.now() - rpcStart;
+  console.log(`[RECORD_ATTENDANCE:${traceId}] RPC call: ${rpcDuration}ms`);
 
-  if (attendanceUserError || !attendanceUser) {
-    const duration = Date.now() - startTime;
-    console.log(`[RECORD_ATTENDANCE:${traceId}] Failed - Unregistered card (${duration}ms)`);
-    return { success: false, message: '未登録のカードです。', user: null, type: null };
-  }
-
-  const userId = attendanceUser.supabase_auth_user_id;
-  const userDisplayName = attendanceUser.member?.display_name || '名無しさん';
-
-  // Step 2: Fetch last attendance
-  const lastAttendanceStart = Date.now();
-  const { data: lastAttendance, error: lastAttendanceError } = await supabase
-    .schema('attendance')
-    .from('attendances')
-    .select('type')
-    .eq('user_id', userId)
-    .order('timestamp', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const lastAttendanceDuration = Date.now() - lastAttendanceStart;
-  console.log(`[RECORD_ATTENDANCE:${traceId}] Last attendance query: ${lastAttendanceDuration}ms`);
-
-  if (lastAttendanceError) {
-      console.error(`[RECORD_ATTENDANCE:${traceId}] Error fetching last attendance:`, lastAttendanceError);
-      const duration = Date.now() - startTime;
-      console.log(`[RECORD_ATTENDANCE:${traceId}] Failed - Last attendance error (${duration}ms)`);
-      return { success: false, message: '過去の打刻記録の取得中にエラーが発生しました。', user: null, type: null };
-  }
-
-  const attendanceType = lastAttendance?.type === 'in' ? 'out' : 'in';
-  const now = new Date();
-
-  // Step 3: Insert attendance record
-  const insertStart = Date.now();
-  const { error: insertError } = await supabase
-    .schema('attendance')
-    .from('attendances')
-    .insert({
-      user_id: userId,
-      type: attendanceType,
-      card_id: normalizedCardId,
-      timestamp: now.toISOString(),
-      date: formatInTimeZone(now, timeZone, 'yyyy-MM-dd')
-    });
-  const insertDuration = Date.now() - insertStart;
-  console.log(`[RECORD_ATTENDANCE:${traceId}] Attendance insert: ${insertDuration}ms`);
-
-  if (insertError) {
-    console.error(`[RECORD_ATTENDANCE:${traceId}] Attendance insert error:`, insertError);
-    const duration = Date.now() - startTime;
-    console.log(`[RECORD_ATTENDANCE:${traceId}] Failed - Insert error (${duration}ms)`);
+  if (error) {
+    console.error(`[RECORD_ATTENDANCE:${traceId}] RPC error:`, error);
     return { success: false, message: '打刻処理中にエラーが発生しました。', user: null, type: null };
   }
 
-  const totalDuration = Date.now() - startTime;
-  console.log(`[RECORD_ATTENDANCE:${traceId}] Success - ${attendanceType} (${totalDuration}ms) - User: ${userDisplayName}`);
+  const result = data as { success: boolean; message: string; user: { display_name: string } | null; type: 'in' | 'out' | null };
 
-  revalidatePath('/dashboard/teams');
-  return {
-    success: true,
-    message: attendanceType === 'in' ? '出勤しました' : '退勤しました',
-    user: { display_name: userDisplayName },
-    type: attendanceType,
-  };
+  const totalDuration = Date.now() - startTime;
+  console.log(`[RECORD_ATTENDANCE:${traceId}] ${result.success ? 'Success' : 'Failed'} - ${result.type} (${totalDuration}ms) - User: ${result.user?.display_name}`);
+
+  if (result.success) {
+    revalidatePath('/dashboard/teams');
+  }
+
+  return result;
 }
 
 
