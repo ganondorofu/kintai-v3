@@ -19,6 +19,7 @@ interface WbgtData {
 }
 
 const AUTO_RESET_DELAY = 5000;
+const PROCESSING_TIMEOUT = 15000;
 
 // --- Helper function to isolate submission logic ---
 
@@ -206,6 +207,7 @@ export default function KioskPage() {
   const [wbgtData, setWbgtData] = useState<WbgtData>({ wbgt: null, timestamp: null });
   
   const resetTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const processingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
   useEffect(() => {
@@ -214,6 +216,7 @@ export default function KioskPage() {
 
   const resetToIdle = useCallback(() => {
     if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    if (processingTimerRef.current) clearTimeout(processingTimerRef.current);
     setKioskState('idle');
     setInputValue('');
     setMessage('');
@@ -230,9 +233,20 @@ export default function KioskPage() {
     
     setKioskState('processing');
     setInputValue('');
-    
+
+    // Client-side timeout for processing state
+    if (processingTimerRef.current) clearTimeout(processingTimerRef.current);
+    processingTimerRef.current = setTimeout(() => {
+      setKioskState('error');
+      setMessage('応答がタイムアウトしました');
+      setSubMessage('もう一度カードをタッチしてください');
+    }, PROCESSING_TIMEOUT);
+
     try {
         const result: any = await processSubmission(submissionType, cardId);
+
+        // Clear processing timeout since we got a response
+        if (processingTimerRef.current) clearTimeout(processingTimerRef.current);
         
         if (submissionType === 'register') {
           if (result.success && result.token) {
@@ -257,6 +271,7 @@ export default function KioskPage() {
           }
         }
     } catch (error) {
+        if (processingTimerRef.current) clearTimeout(processingTimerRef.current);
         console.error("Submission failed:", error);
         setKioskState('error');
         setMessage('サーバーとの通信に失敗しました。');
@@ -276,12 +291,16 @@ export default function KioskPage() {
   
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (kioskState === 'processing' || kioskState === 'loading' || (kioskState === 'qr' && e.key !== 'Escape')) {
+      if (kioskState === 'loading' || (kioskState === 'qr' && e.key !== 'Escape')) {
         return;
       }
 
       if (e.key === 'Escape') {
         resetToIdle();
+        return;
+      }
+
+      if (kioskState === 'processing') {
         return;
       }
       
