@@ -3,6 +3,7 @@ ALTER TABLE member.members ADD COLUMN IF NOT EXISTS display_name text;
 
 -- Create RPC function for single-call kiosk attendance recording
 -- Replaces 3 separate PostgREST requests with 1 DB function call
+-- Returns discord_uid so app can fallback to Bot API if display_name is NULL
 CREATE OR REPLACE FUNCTION attendance.record_attendance_by_card(p_card_id text)
 RETURNS json
 LANGUAGE plpgsql
@@ -12,12 +13,12 @@ AS $$
 DECLARE
   v_user_id uuid;
   v_display_name text;
+  v_discord_uid text;
   v_last_type text;
   v_new_type text;
   v_now timestamptz := now();
   v_date date := (v_now AT TIME ZONE 'Asia/Tokyo')::date;
 BEGIN
-  -- Step 1: Look up user by card_id
   SELECT u.supabase_auth_user_id INTO v_user_id
   FROM attendance.users u
   WHERE u.card_id = p_card_id;
@@ -31,16 +32,10 @@ BEGIN
     );
   END IF;
 
-  -- Step 2: Get display_name from member schema
-  SELECT m.display_name INTO v_display_name
+  SELECT m.display_name, m.discord_uid INTO v_display_name, v_discord_uid
   FROM member.members m
   WHERE m.supabase_auth_user_id = v_user_id;
 
-  IF v_display_name IS NULL THEN
-    v_display_name := '名無しさん';
-  END IF;
-
-  -- Step 3: Get last attendance type
   SELECT a.type INTO v_last_type
   FROM attendance.attendances a
   WHERE a.user_id = v_user_id
@@ -49,14 +44,13 @@ BEGIN
 
   v_new_type := CASE WHEN v_last_type = 'in' THEN 'out' ELSE 'in' END;
 
-  -- Step 4: Insert attendance record
   INSERT INTO attendance.attendances (user_id, card_id, type, timestamp, date)
   VALUES (v_user_id, p_card_id, v_new_type, v_now, v_date);
 
   RETURN json_build_object(
     'success', true,
     'message', CASE WHEN v_new_type = 'in' THEN '出勤しました' ELSE '退勤しました' END,
-    'user', json_build_object('display_name', v_display_name),
+    'user', json_build_object('display_name', v_display_name, 'discord_uid', v_discord_uid),
     'type', v_new_type
   );
 

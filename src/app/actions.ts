@@ -68,7 +68,25 @@ async function recordAttendanceInternal(cardId: string, traceId: string): Promis
     return { success: false, message: '打刻処理中にエラーが発生しました。', user: null, type: null };
   }
 
-  const result = data as { success: boolean; message: string; user: { display_name: string } | null; type: 'in' | 'out' | null };
+  const result = data as { success: boolean; message: string; user: { display_name: string | null; discord_uid: string | null } | null; type: 'in' | 'out' | null };
+
+  // display_name がDBにない場合、Discord Bot APIから取得してDBにも保存
+  if (result.success && result.user && !result.user.display_name && result.user.discord_uid) {
+    const nicknameStart = Date.now();
+    const { data: nickname } = await fetchMemberNickname(result.user.discord_uid);
+    console.log(`[RECORD_ATTENDANCE:${traceId}] Nickname API fallback: ${Date.now() - nicknameStart}ms`);
+    if (nickname) {
+      result.user.display_name = nickname;
+      // DBにもキャッシュ保存（非同期、レスポンスは待たない）
+      supabase.schema('member').from('members')
+        .update({ display_name: nickname })
+        .eq('discord_uid', result.user.discord_uid)
+        .then(() => console.log(`[RECORD_ATTENDANCE:${traceId}] Cached display_name for ${result.user!.discord_uid}`));
+    }
+  }
+  if (result.user && !result.user.display_name) {
+    result.user.display_name = '名無しさん';
+  }
 
   const totalDuration = Date.now() - startTime;
   console.log(`[RECORD_ATTENDANCE:${traceId}] ${result.success ? 'Success' : 'Failed'} - ${result.type} (${totalDuration}ms) - User: ${result.user?.display_name}`);
@@ -77,7 +95,9 @@ async function recordAttendanceInternal(cardId: string, traceId: string): Promis
     revalidatePath('/dashboard/teams');
   }
 
-  return result;
+  // discord_uid をクライアントに返さない
+  const { discord_uid, ...userWithoutDiscordUid } = result.user || { discord_uid: null };
+  return { ...result, user: result.user ? userWithoutDiscordUid : null };
 }
 
 
