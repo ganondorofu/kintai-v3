@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
-import { recordAttendance, createTempRegistration } from '@/app/actions';
+import { createTempRegistration } from '@/app/actions';
 import Clock from '@/components/kiosk/Clock';
 import { Bell, LogIn, LogOut, XCircle, UserPlus, Copy, Thermometer } from 'lucide-react';
 import Image from 'next/image';
@@ -21,13 +21,53 @@ interface WbgtData {
 const AUTO_RESET_DELAY = 5000;
 const PROCESSING_TIMEOUT = 15000;
 
+// --- Direct Supabase RPC call for attendance (bypasses Vercel serverless) ---
+
+async function recordAttendanceDirect(supabase: ReturnType<typeof createSupabaseBrowserClient>, cardId: string): Promise<{
+  success: boolean;
+  message: string;
+  user: { display_name: string | null } | null;
+  type: 'in' | 'out' | null;
+}> {
+  const normalizedCardId = cardId.replace(/:/g, '').toLowerCase();
+
+  const { data, error } = await supabase.schema('attendance').rpc('record_attendance_by_card', {
+    p_card_id: normalizedCardId,
+  });
+
+  if (error) {
+    console.error('RPC error:', error);
+    return { success: false, message: '打刻処理中にエラーが発生しました。', user: null, type: null };
+  }
+
+  const result = data as {
+    success: boolean;
+    message: string;
+    user: { display_name: string | null; discord_uid: string | null } | null;
+    type: 'in' | 'out' | null;
+  };
+
+  // display_nameがNULLの場合は「名無しさん」にフォールバック
+  if (result.user && !result.user.display_name) {
+    result.user.display_name = '名無しさん';
+  }
+
+  return {
+    success: result.success,
+    message: result.message,
+    user: result.user ? { display_name: result.user.display_name } : null,
+    type: result.type,
+  };
+}
+
 // --- Helper function to isolate submission logic ---
 
-async function processSubmission(submissionType: 'idle' | 'register', cardId: string) {
+async function processSubmission(supabase: ReturnType<typeof createSupabaseBrowserClient>, submissionType: 'idle' | 'register', cardId: string) {
   if (submissionType === 'register') {
     return await createTempRegistration(cardId);
   }
-  return await recordAttendance(cardId);
+  // 出退勤はSupabase RPCを直接呼ぶ（Vercelサーバーレスを経由しない）
+  return await recordAttendanceDirect(supabase, cardId);
 }
 
 // --- Memoized Components for Performance ---
@@ -230,7 +270,7 @@ export default function KioskPage() {
       setInputValue('');
       return;
     }
-    
+
     setKioskState('processing');
     setInputValue('');
 
@@ -243,7 +283,7 @@ export default function KioskPage() {
     }, PROCESSING_TIMEOUT);
 
     try {
-        const result: any = await processSubmission(submissionType, cardId);
+        const result: any = await processSubmission(supabase, submissionType, cardId);
 
         // Clear processing timeout since we got a response
         if (processingTimerRef.current) clearTimeout(processingTimerRef.current);
@@ -277,7 +317,7 @@ export default function KioskPage() {
         setMessage('サーバーとの通信に失敗しました。');
         setSubMessage('ネットワーク接続を確認して、もう一度お試しください。');
     }
-  }, []);
+  }, [supabase]);
 
   useEffect(() => {
     if (kioskState === 'success' || kioskState === 'error') {
