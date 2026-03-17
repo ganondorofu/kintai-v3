@@ -55,11 +55,12 @@ async function recordAttendanceInternal(cardId: string, traceId: string): Promis
 
   const normalizedCardId = cardId.replace(/:/g, '').toLowerCase();
 
+  // Step 1: Look up user by card_id (single-schema query, no cross-schema JOIN)
   const userLookupStart = Date.now();
   const { data: attendanceUser, error: attendanceUserError } = await supabase
     .schema('attendance')
     .from('users')
-    .select('supabase_auth_user_id, member:member_members!inner(display_name)')
+    .select('supabase_auth_user_id')
     .eq('card_id', normalizedCardId)
     .single();
   const userLookupDuration = Date.now() - userLookupStart;
@@ -72,30 +73,41 @@ async function recordAttendanceInternal(cardId: string, traceId: string): Promis
   }
 
   const userId = attendanceUser.supabase_auth_user_id;
-  const userDisplayName = attendanceUser.member?.display_name || '名無しさん';
 
-  const lastAttendanceStart = Date.now();
-  const { data: lastAttendance, error: lastAttendanceError } = await supabase
-    .schema('attendance')
-    .from('attendances')
-    .select('type')
-    .eq('user_id', userId)
-    .order('timestamp', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const lastAttendanceDuration = Date.now() - lastAttendanceStart;
-  console.log(`[RECORD_ATTENDANCE:${traceId}] Last attendance query: ${lastAttendanceDuration}ms`);
+  // Step 2: Fetch display_name and last attendance in parallel
+  const parallelStart = Date.now();
+  const [memberResult, lastAttendanceResult] = await Promise.all([
+    supabase
+      .schema('member')
+      .from('members')
+      .select('display_name')
+      .eq('supabase_auth_user_id', userId)
+      .single(),
+    supabase
+      .schema('attendance')
+      .from('attendances')
+      .select('type')
+      .eq('user_id', userId)
+      .order('timestamp', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  const parallelDuration = Date.now() - parallelStart;
+  console.log(`[RECORD_ATTENDANCE:${traceId}] Parallel queries (display_name + last attendance): ${parallelDuration}ms`);
 
-  if (lastAttendanceError) {
-      console.error(`[RECORD_ATTENDANCE:${traceId}] Error fetching last attendance:`, lastAttendanceError);
+  const userDisplayName = memberResult.data?.display_name || '名無しさん';
+
+  if (lastAttendanceResult.error) {
+      console.error(`[RECORD_ATTENDANCE:${traceId}] Error fetching last attendance:`, lastAttendanceResult.error);
       const duration = Date.now() - startTime;
       console.log(`[RECORD_ATTENDANCE:${traceId}] Failed - Last attendance error (${duration}ms)`);
       return { success: false, message: '過去の打刻記録の取得中にエラーが発生しました。', user: null, type: null };
   }
 
-  const attendanceType = lastAttendance?.type === 'in' ? 'out' : 'in';
+  const attendanceType = lastAttendanceResult.data?.type === 'in' ? 'out' : 'in';
   const now = new Date();
 
+  // Step 3: Insert attendance record
   const insertStart = Date.now();
   const { error: insertError } = await supabase
     .schema('attendance')
@@ -120,10 +132,7 @@ async function recordAttendanceInternal(cardId: string, traceId: string): Promis
   const totalDuration = Date.now() - startTime;
   console.log(`[RECORD_ATTENDANCE:${traceId}] Success - ${attendanceType} (${totalDuration}ms) - User: ${userDisplayName}`);
 
-  const revalidateStart = Date.now();
   revalidatePath('/dashboard/teams');
-  const revalidateDuration = Date.now() - revalidateStart;
-  console.log(`[RECORD_ATTENDANCE:${traceId}] Revalidate path: ${revalidateDuration}ms`);
   return {
     success: true,
     message: attendanceType === 'in' ? '出勤しました' : '退勤しました',
@@ -141,7 +150,29 @@ const processSubmission = async (submissionType: 'idle' | 'register', cardId: st
   }
 
 export async function createTempRegistration(cardId: string): Promise<{ success: boolean; token?: string; message: string }> {
+  const TIMEOUT_MS = 10000;
   const traceId = randomUUID();
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error('TIMEOUT')), TIMEOUT_MS);
+  });
+
+  try {
+    return await Promise.race([
+      createTempRegistrationInternal(cardId, traceId),
+      timeoutPromise
+    ]);
+  } catch (error) {
+    if (error instanceof Error && error.message === 'TIMEOUT') {
+      console.error(`[CREATE_TEMP_REG:${traceId}] Timeout after ${TIMEOUT_MS}ms`);
+      return { success: false, message: 'サーバーの応答がタイムアウトしました。もう一度お試しください。' };
+    }
+    console.error(`[CREATE_TEMP_REG:${traceId}] Unexpected error:`, error);
+    return { success: false, message: '予期しないエラーが発生しました。' };
+  }
+}
+
+async function createTempRegistrationInternal(cardId: string, traceId: string): Promise<{ success: boolean; token?: string; message: string }> {
   const startTime = Date.now();
   const supabase = await createSupabaseAdminClient();
   const normalizedCardId = cardId.replace(/:/g, '').toLowerCase();
