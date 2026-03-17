@@ -55,12 +55,12 @@ async function recordAttendanceInternal(cardId: string, traceId: string): Promis
 
   const normalizedCardId = cardId.replace(/:/g, '').toLowerCase();
 
-  // Step 1: Look up user by card_id (single-schema query, no cross-schema JOIN)
+  // Step 1: Look up user by card_id (with cross-schema JOIN for display_name)
   const userLookupStart = Date.now();
   const { data: attendanceUser, error: attendanceUserError } = await supabase
     .schema('attendance')
     .from('users')
-    .select('supabase_auth_user_id')
+    .select('supabase_auth_user_id, member:member_members!inner(display_name)')
     .eq('card_id', normalizedCardId)
     .single();
   const userLookupDuration = Date.now() - userLookupStart;
@@ -73,38 +73,29 @@ async function recordAttendanceInternal(cardId: string, traceId: string): Promis
   }
 
   const userId = attendanceUser.supabase_auth_user_id;
+  const userDisplayName = attendanceUser.member?.display_name || '名無しさん';
 
-  // Step 2: Fetch display_name and last attendance in parallel
-  const parallelStart = Date.now();
-  const [memberResult, lastAttendanceResult] = await Promise.all([
-    supabase
-      .schema('member')
-      .from('members')
-      .select('display_name')
-      .eq('supabase_auth_user_id', userId)
-      .single(),
-    supabase
-      .schema('attendance')
-      .from('attendances')
-      .select('type')
-      .eq('user_id', userId)
-      .order('timestamp', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ]);
-  const parallelDuration = Date.now() - parallelStart;
-  console.log(`[RECORD_ATTENDANCE:${traceId}] Parallel queries (display_name + last attendance): ${parallelDuration}ms`);
+  // Step 2: Fetch last attendance
+  const lastAttendanceStart = Date.now();
+  const { data: lastAttendance, error: lastAttendanceError } = await supabase
+    .schema('attendance')
+    .from('attendances')
+    .select('type')
+    .eq('user_id', userId)
+    .order('timestamp', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const lastAttendanceDuration = Date.now() - lastAttendanceStart;
+  console.log(`[RECORD_ATTENDANCE:${traceId}] Last attendance query: ${lastAttendanceDuration}ms`);
 
-  const userDisplayName = memberResult.data?.display_name || '名無しさん';
-
-  if (lastAttendanceResult.error) {
-      console.error(`[RECORD_ATTENDANCE:${traceId}] Error fetching last attendance:`, lastAttendanceResult.error);
+  if (lastAttendanceError) {
+      console.error(`[RECORD_ATTENDANCE:${traceId}] Error fetching last attendance:`, lastAttendanceError);
       const duration = Date.now() - startTime;
       console.log(`[RECORD_ATTENDANCE:${traceId}] Failed - Last attendance error (${duration}ms)`);
       return { success: false, message: '過去の打刻記録の取得中にエラーが発生しました。', user: null, type: null };
   }
 
-  const attendanceType = lastAttendanceResult.data?.type === 'in' ? 'out' : 'in';
+  const attendanceType = lastAttendance?.type === 'in' ? 'out' : 'in';
   const now = new Date();
 
   // Step 3: Insert attendance record
