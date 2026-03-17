@@ -1,10 +1,11 @@
 
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { Database } from '@/lib/types'
 
-export function createSupabaseServerClient() {
-  const cookieStore = cookies()
+export async function createSupabaseServerClient() {
+  const cookieStore = await cookies()
 
   return createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -33,40 +34,34 @@ export function createSupabaseServerClient() {
           }
         },
       },
+      cookieOptions: {
+        // Cookieのサイズ制限を回避するため、セッションを分割
+        maxAge: 60 * 60 * 24 * 7, // 7日間
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+      },
     }
   )
 }
 
-export function createSupabaseAdminClient() {
+export async function createSupabaseAdminClient() {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !supabaseServiceKey) {
         throw new Error('Supabase URL or Service Role Key is not set. Please check your .env.local file.');
     }
-
-    const cookieStore = cookies();
-    return createServerClient<Database>(
+    
+    // Service Role Key用のクライアントはCookieを使わない
+    // これにより、service_roleとして動作し、RLSをバイパスできる
+    return createClient<Database>(
         supabaseUrl,
         supabaseServiceKey,
         {
-            cookies: {
-                 get(name: string) {
-                  return cookieStore.get(name)?.value
-                },
-                set(name: string, value: string, options: CookieOptions) {
-                  try {
-                    cookieStore.set({ name, value, ...options })
-                  } catch (error) {
-                  }
-                },
-                remove(name: string, options: CookieOptions) {
-                  try {
-                    cookieStore.set({ name, value: '', ...options })
-                  } catch (error) {
-                  }
-                },
-            },
+            auth: {
+                persistSession: false,
+                autoRefreshToken: false,
+            }
         }
     );
 }

@@ -1,5 +1,6 @@
-import { signOut, getTeamsWithMemberStatus } from "@/app/actions";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+
+import { signOut } from "@/app/actions";
+import { createSupabaseServerClient, createSupabaseAdminClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import {
   Sidebar,
@@ -11,25 +12,25 @@ import {
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Icons } from "@/components/icons";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { Menu } from "lucide-react";
-import DashboardNav from "./_components/DashboardNav";
+import DashboardNav from "./components/DashboardNav";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { checkDiscordMembership } from "@/app/actions";
 
-async function UserProfile({ user }: { user: any }) {
-  const { data: profile } = await createSupabaseServerClient().schema('member').from('members').select('display_name').eq('id', user.id).single();
-  const initials = profile?.display_name?.charAt(0).toUpperCase() || 'U';
+async function UserProfile({ user, displayName }: { user: any; displayName: string }) {
+  const initials = displayName.charAt(0).toUpperCase() || 'U';
   
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-3">
         <Avatar>
-            <AvatarImage src={user.user_metadata.avatar_url} alt={profile?.display_name || ''} />
+            <AvatarImage src={user.user_metadata.avatar_url} alt={displayName} />
             <AvatarFallback>{initials}</AvatarFallback>
         </Avatar>
         <div className="flex flex-col">
-            <span className="font-semibold text-sm">{profile?.display_name || '名無しさん'}</span>
-            <span className="text-xs text-muted-foreground">{user.email?.includes('anonymous') ? '' : user.email}</span>
+            <span className="font-semibold text-sm">{displayName}</span>
+            <span className="text-xs text-muted-foreground">{user.email}</span>
         </div>
       </div>
        <form action={signOut}>
@@ -41,9 +42,7 @@ async function UserProfile({ user }: { user: any }) {
   )
 }
 
-async function MainSidebar({ user, isAdmin, userTeams }: { user: any, isAdmin: boolean, userTeams: { team_id: number }[] }) {
-  const teams = await getTeamsWithMemberStatus();
-
+function MainSidebar({ user, isAdmin, displayName }: { user: any, isAdmin: boolean, displayName: string }) {
   return (
     <>
       <SidebarHeader>
@@ -56,16 +55,16 @@ async function MainSidebar({ user, isAdmin, userTeams }: { user: any, isAdmin: b
         </div>
       </SidebarHeader>
       <SidebarContent className="p-2">
-        <DashboardNav isAdmin={isAdmin} teams={teams || []} userTeams={userTeams} />
+        <DashboardNav isAdmin={isAdmin} />
       </SidebarContent>
       <SidebarFooter>
-        <UserProfile user={user} />
+        <UserProfile user={user} displayName={displayName} />
       </SidebarFooter>
     </>
   )
 }
 
-function MobileHeader({ user, isAdmin, userTeams }: { user: any, isAdmin: boolean, userTeams: { team_id: number }[] }) {
+function MobileHeader({ user, isAdmin, displayName }: { user: any, isAdmin: boolean, displayName: string }) {
     return (
         <header className="sticky top-0 z-40 flex h-14 items-center gap-4 border-b bg-background px-4 sm:hidden">
             <Sheet>
@@ -76,7 +75,8 @@ function MobileHeader({ user, isAdmin, userTeams }: { user: any, isAdmin: boolea
                     </Button>
                 </SheetTrigger>
                 <SheetContent side="left" className="sm:max-w-xs flex flex-col p-0">
-                    <MainSidebar user={user} isAdmin={isAdmin} userTeams={userTeams} />
+                    <SheetTitle className="sr-only">ナビゲーションメニュー</SheetTitle>
+                    <MainSidebar user={user} isAdmin={isAdmin} displayName={displayName} />
                 </SheetContent>
             </Sheet>
             <div className="ml-auto">
@@ -98,26 +98,88 @@ export default async function DashboardLayout({
     return redirect("/login");
   }
 
-  const { data: profile } = await supabase.schema('member').from('members').select('id, is_admin, member_team_relations(team_id)').eq('id', user.id).single();
+  // プロフィールと勤怠ユーザーを並列取得
+  const [profileResult, attendanceUserResult] = await Promise.all([
+    supabase
+      .schema('member')
+      .from('members')
+      .select('is_admin, discord_uid, display_name')
+      .eq('supabase_auth_user_id', user.id)
+      .single(),
+    supabase
+      .schema('attendance')
+      .from('users')
+      .select('card_id')
+      .eq('supabase_auth_user_id', user.id)
+      .single(),
+  ]);
 
-  if (!profile) {
-    await supabase.auth.signOut();
-    return redirect("/register/unregistered");
+  const { data: profile, error: profileError } = profileResult;
+
+  // member.membersに登録されていない場合は、メインシステム登録画面へ
+  if (profileError || !profile) {
+    console.error('Profile fetch error:', profileError);
+    return redirect("/register/member-unregistered");
+  }
+
+  // Discordサーバーに参加しているか確認 + ニックネーム取得（1つのAPIコールで両方）
+  let displayName = profile.display_name || '名無しさん';
+  if (profile.discord_uid) {
+    try {
+      const discordCheck = await checkDiscordMembership(profile.discord_uid);
+      if (discordCheck.success && !discordCheck.isInServer) {
+        console.log('User not in Discord server, redirecting:', profile.discord_uid);
+        return redirect("/register/discord-required");
+      }
+      // checkDiscordMembershipのレスポンスにニックネームが含まれる
+      if (discordCheck.nickname && displayName === '名無しさん') {
+        // ニックネームから名前部分を抽出（"1期 | 米川 明希" → "米川 明希"）
+        const parts = discordCheck.nickname.split('|');
+        const nameOnly = parts.length > 1 ? parts[parts.length - 1].trim() : discordCheck.nickname.trim();
+        displayName = nameOnly;
+        // DBにもキャッシュ保存（非同期）
+        const adminClient = await createSupabaseAdminClient();
+        adminClient.schema('member').from('members')
+          .update({ display_name: nameOnly })
+          .eq('discord_uid', profile.discord_uid!)
+          .then(() => console.log(`Cached display_name for ${profile.discord_uid}`));
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message === 'NEXT_REDIRECT') {
+        throw error;
+      }
+      console.error('Discord membership check failed:', error);
+      return redirect("/register/discord-required");
+    }
+  }
+
+  const { data: attendanceUser, error: attendanceError } = attendanceUserResult;
+
+  // attendanceUserレコード自体が存在しない場合はカード未登録画面へ
+  if (attendanceError?.code === 'PGRST116' || !attendanceUser) {
+    console.log('No attendance user record found, redirecting to card registration:', user.id);
+    return redirect("/register/card-unregistered");
+  }
+
+  if (attendanceError) {
+    console.error('Unexpected error fetching attendance user:', attendanceError);
+    return redirect("/register/card-unregistered");
   }
 
   const isAdmin = profile.is_admin;
-  const userTeams = profile.member_team_relations || [];
 
   return (
     <SidebarProvider>
-      <Sidebar className="hidden sm:flex">
-        <MainSidebar user={user} isAdmin={isAdmin} userTeams={userTeams} />
-      </Sidebar>
-      <div className="flex flex-col sm:pl-64">
-        <MobileHeader user={user} isAdmin={isAdmin} userTeams={userTeams} />
-        <main className="flex-1 p-4 sm:p-6 bg-secondary/50 min-h-screen">
-          {children}
-        </main>
+      <div className="flex min-h-screen w-full">
+        <Sidebar className="hidden sm:flex">
+            <MainSidebar user={user} isAdmin={isAdmin} displayName={displayName} />
+        </Sidebar>
+        <div className="flex flex-1 flex-col">
+          <MobileHeader user={user} isAdmin={isAdmin} displayName={displayName} />
+          <main className="flex-1 p-2 sm:p-4 bg-secondary/50">
+              {children}
+          </main>
+        </div>
       </div>
     </SidebarProvider>
   );

@@ -1,3 +1,4 @@
+
 'use client'
 
 import { completeRegistration, signInWithDiscord } from '@/app/actions';
@@ -8,30 +9,27 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import type { Tables } from '@/lib/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertTriangle, Clock } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { useFormStatus } from 'react-dom';
-import { format } from 'date-fns';
-import { ja } from 'date-fns/locale';
-import { convertGenerationToGrade } from '@/lib/utils';
 import { FaDiscord } from 'react-icons/fa';
 
-function SubmitButton() {
+function SubmitButton({ isUpdate }: { isUpdate: boolean }) {
     const { pending } = useFormStatus();
     return (
         <Button type="submit" className="w-full" size="lg" disabled={pending}>
-            {pending ? "登録中..." : "登録を完了する"}
+            {pending ? (isUpdate ? "更新中..." : "登録中...") : (isUpdate ? "カードを更新する" : "登録を完了する")}
         </Button>
     );
 }
 
-function RegisterForm({ token }: { token: string }) {
+function RegisterForm({ token, isUpdate }: { token: string, isUpdate: boolean }) {
   return (
     <form action={completeRegistration} className="space-y-4">
       <input type="hidden" name="token" value={token} />
        <div className='text-sm text-muted-foreground text-center'>
-        ユーザー情報を確認しました。下のボタンを押して、このカードの登録を完了してください。
+        ユーザー情報を確認しました。下のボタンを押して、このカードの{isUpdate ? "更新" : "登録"}を完了してください。
       </div>
-      <SubmitButton />
+      <SubmitButton isUpdate={isUpdate} />
     </form>
   );
 }
@@ -41,31 +39,47 @@ type FullProfile = Tables<'member', 'members'> & {
     teams: { name: string } | null,
 };
 
-export default function RegisterPageClient({ token, tempReg, teams, session, fullProfile }: { 
+export default function RegisterPageClient({ 
+    token, 
+    tempReg, 
+    session, 
+    displayName,
+    existingCardId,
+}: { 
     token: string,
     tempReg?: Tables<'attendance', 'temp_registrations'> | null,
-    teams?: Tables<'member', 'teams'>[],
     session?: any,
-    fullProfile?: FullProfile | null
+    displayName?: string | null,
+    existingCardId?: string | null,
 }) {
     const searchParams = useSearchParams();
     const success = searchParams.get('success');
     const error = searchParams.get('error');
+    const newCardId = searchParams.get('newCardId');
 
-    if (token === 'unregistered') {
+    const isUpdateFlow = !!existingCardId && existingCardId !== tempReg?.card_id;
+
+    if (token === 'card-unregistered') {
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4">
                 <Card className="w-full max-w-md">
                     <CardHeader className="items-center text-center">
-                        <Icons.UserPlus className="w-16 h-16 text-destructive mb-4" />
+                        <AlertTriangle className="w-16 h-16 text-orange-500 mb-4" />
                         <CardTitle className="text-2xl">カードが未登録です</CardTitle>
                         <CardDescription>
-                            ダッシュボードにアクセスするには、まずカードを登録する必要があります。
+                            出退勤の記録にはカードの登録が必要です。
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="text-center space-y-4">
-                        <p className="text-muted-foreground">お手数ですが、Kiosk端末でQRコードをスキャンして登録を完了してください。</p>
-                        <Button asChild variant="outline">
+                        <p className="text-muted-foreground">
+                            旧システムからカードIDを引き継ぐか、部室のKiosk端末でカードをスキャンして登録してください。
+                        </p>
+                        <div className="space-y-2">
+                            <Button asChild className="w-full">
+                                <Link href="/dashboard">ダッシュボードで旧カードを引き継ぐ</Link>
+                            </Button>
+                        </div>
+                        <Button asChild variant="ghost" className="w-full">
                             <Link href="/login">ログインページに戻る</Link>
                         </Button>
                     </CardContent>
@@ -74,6 +88,43 @@ export default function RegisterPageClient({ token, tempReg, teams, session, ful
         );
     }
   
+    if (success === 'true') {
+        const cardId = newCardId || tempReg?.card_id || '';
+        const discordUsername = session?.user?.user_metadata?.user_name || session?.user?.user_metadata?.full_name || '';
+        const userName = displayName || '名無しさん';
+        
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4">
+                <Card className="w-full max-w-md">
+                    <CardHeader className="items-center text-center">
+                        <Icons.CheckCircle2 className="w-16 h-16 text-green-500 mb-4" />
+                        <CardTitle className="text-2xl">{isUpdateFlow ? "カードが更新されました！" : "登録が完了しました!"}</CardTitle>
+                        <CardDescription>ダッシュボードへ移動できます</CardDescription>
+                    </CardHeader>
+                    <CardContent className='space-y-4'>
+                        <Card className='bg-muted/50'>
+                           <CardContent className='p-4 space-y-2'>
+                                <div className="flex justify-between items-center">
+                                    <span className='font-semibold'>お名前</span>
+                                    <span className='font-medium'>{userName}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className='font-semibold'><FaDiscord className="inline w-4 h-4 mr-1" />Discord ユーザー名</span>
+                                    <span className='font-medium'>@{discordUsername}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className='font-semibold'>カードID</span>
+                                    <span className='font-mono text-sm'>{cardId}</span>
+                                </div>
+                           </CardContent>
+                        </Card>
+                        <Button asChild className="w-full"><Link href="/dashboard">ダッシュボードへ</Link></Button>
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    }
+    
     if (!tempReg || tempReg.is_used || new Date(tempReg.expires_at) < new Date()) {
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4">
@@ -92,48 +143,13 @@ export default function RegisterPageClient({ token, tempReg, teams, session, ful
             </div>
         );
     }
-  
-    if (success === 'true' || (session?.user && fullProfile?.attendance_user)) {
-        const cardId = fullProfile?.attendance_user?.card_id || tempReg.card_id;
-        return (
-            <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4">
-                <Card className="w-full max-w-md">
-                    <CardHeader className="items-center text-center">
-                        <Icons.CheckCircle2 className="w-16 h-16 text-green-500 mb-4" />
-                        <CardTitle className="text-2xl">登録が完了しました！</CardTitle>
-                        <CardDescription>これでカードが使用可能になりました。</CardDescription>
-                    </CardHeader>
-                    <CardContent className='space-y-4'>
-                        <Card className='bg-muted/50'>
-                           <CardContent className='p-4 space-y-2'>
-                                <div className="flex justify-between items-center">
-                                    <span className='font-semibold'>👤 表示ユーザー名</span>
-                                    <span>{fullProfile?.display_name}</span>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                    <span className='font-semibold'>🏷️ 班・学年/期生</span>
-                                    <span>{fullProfile?.teams?.name}・{fullProfile?.generation ? convertGenerationToGrade(fullProfile.generation) : ''}</span>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                    <span className='font-semibold'>📇 カードID</span>
-                                    <span className='font-mono'>{cardId.slice(0,3)}...{cardId.slice(-4)}</span>
-                                </div>
-                           </CardContent>
-                        </Card>
-                        <Button asChild className="w-full"><Link href="/dashboard">ダッシュボードへ</Link></Button>
-                        <p className='text-center text-muted-foreground text-sm'>カードリーダーで打刻してください。</p>
-                    </CardContent>
-                </Card>
-            </div>
-        );
-    }
 
     return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4">
             <Card className="w-full max-w-md">
                 <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-2xl"><Icons.UserPlus /> カード登録</CardTitle>
-                    <CardDescription>QRコードスキャンありがとうございます。情報を入力して登録を完了してください。</CardDescription>
+                    <CardTitle className="flex items-center gap-2 text-2xl"><Icons.UserPlus /> {isUpdateFlow ? "カードの更新" : "カード登録"}</CardTitle>
+                    <CardDescription>QRコードスキャンありがとうございます。Discordで認証して登録を完了してください。</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                     {error && (
@@ -145,26 +161,41 @@ export default function RegisterPageClient({ token, tempReg, teams, session, ful
                     )}
                     <Card className="bg-muted/50">
                         <CardContent className="p-4 space-y-2 text-sm">
+                            {session?.user?.user_metadata && displayName && (
+                                <div className="flex justify-between">
+                                    <span className="text-muted-foreground">お名前:</span>
+                                    <span className="font-medium">{displayName}</span>
+                                </div>
+                            )}
+                            {session?.user?.user_metadata && (
+                                <div className="flex justify-between">
+                                    <span className="text-muted-foreground flex items-center gap-1"><FaDiscord className="w-4 h-4"/>Discord ユーザー名:</span>
+                                    <span className="font-medium">{session.user.user_metadata.user_name || session.user.user_metadata.full_name}</span>
+                                </div>
+                            )}
                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">📇 カードID:</span>
+                                <span className="text-muted-foreground">新しいカードID:</span>
                                 <span className="font-mono font-medium">{tempReg.card_id}</span>
                             </div>
-                            <div className="flex justify-between">
-                                <span className="text-muted-foreground flex items-center gap-1"><Clock className="w-4 h-4"/>読み取り日時:</span>
-                                <span className="font-medium">{format(new Date(tempReg.created_at), 'yyyy/MM/dd HH:mm', { locale: ja })}</span>
-                            </div>
+                            {isUpdateFlow && (
+                                <div className="flex justify-between">
+                                    <span className="text-muted-foreground">現在のカードID:</span>
+                                    <span className="font-mono font-medium text-destructive line-through">{existingCardId}</span>
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
                     
                     {!session ? (
                         <form action={signInWithDiscord}>
+                            <input type="hidden" name="next" value={`/register/${token}`} />
                             <Button type="submit" className="w-full bg-[#5865F2] hover:bg-[#4752C4] text-white" size="lg">
                                 <FaDiscord className="w-5 h-5 mr-2" />
-                                Discordで認証して登録する
+                                Discordで認証して{isUpdateFlow ? "更新" : "登録"}する
                             </Button>
                         </form>
                     ) : (
-                        <RegisterForm token={token} />
+                        <RegisterForm token={token} isUpdate={isUpdateFlow} />
                     )}
                 </CardContent>
             </Card>

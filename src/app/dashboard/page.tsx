@@ -10,16 +10,18 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge";
-import { format, subDays } from "date-fns";
-import { ja } from "date-fns/locale";
-import AttendanceCalendar from "./_components/AttendanceCalendar";
-import ClientRelativeTime from "./_components/ClientRelativeTime";
+import { subDays } from "date-fns";
+import AttendanceCalendar from "./components/AttendanceCalendar";
+import ClientRelativeTime from "./components/ClientRelativeTime";
+import CardMigrationAlert from "./components/CardMigrationAlert";
 import { calculateTotalActivityTime } from "../actions";
-import AdminAttendanceCalendar from "./_components/AdminAttendanceCalendar";
-import { convertGenerationToGrade } from "@/lib/utils";
+import { convertGenerationToGrade, formatJst } from "@/lib/utils";
 import { redirect } from "next/navigation";
+import { toZonedTime } from "date-fns-tz";
 
 export const dynamic = 'force-dynamic';
+
+const timeZone = 'Asia/Tokyo';
 
 export default async function DashboardPage() {
     const supabase = await createSupabaseServerClient();
@@ -29,61 +31,99 @@ export default async function DashboardPage() {
         redirect('/login');
     }
 
-    const { data: profile } = await supabase
+    // プロフィールと勤怠ユーザーを並列取得
+    const [profileResult, attendanceUserResult] = await Promise.all([
+      supabase
         .schema('member')
         .from('members')
         .select(`
-            *,
-            teams:member_team_relations(teams(name))
+            discord_uid,
+            generation,
+            is_admin,
+            joined_at,
+            display_name,
+            member_team_relations(teams(name))
         `)
-        .eq('id', user!.id)
-        .single();
-    
-    if (!profile) {
-        redirect('/register/unregistered');
+        .eq('supabase_auth_user_id', user!.id)
+        .single(),
+      supabase
+        .schema('attendance')
+        .from('users')
+        .select('card_id')
+        .eq('supabase_auth_user_id', user!.id)
+        .single(),
+    ]);
+
+    const { data: profile, error: profileError } = profileResult;
+
+    if (profileError || !profile) {
+        console.error('Profile fetch error:', profileError);
+        redirect('/register/member-unregistered');
     }
 
-    const thirtyDaysAgo = format(subDays(new Date(), 30), 'yyyy-MM-dd');
-    const userCreatedAtDate = format(new Date(profile!.created_at), 'yyyy-MM-dd');
+    const hasCardId = attendanceUserResult.data?.card_id && attendanceUserResult.data.card_id.trim() !== '';
 
-    const [attendancesResult, totalActivityTime] = await Promise.all([
+    // display_nameがDBにあればそれを使用（Discord API不要）
+    const displayName = profile.display_name || '名無しさん';
+    let firstname = '';
+    let lastname = '';
+    if (displayName !== '名無しさん') {
+        const nameParts = displayName.split(/\s+/);
+        if (nameParts.length >= 2) {
+            lastname = nameParts[0].toLowerCase();
+            firstname = nameParts[1].toLowerCase();
+        }
+    }
+
+    const today = toZonedTime(new Date(), timeZone);
+    const thirtyDaysAgo = formatJst(subDays(today, 30), 'yyyy-MM-dd');
+    const userCreatedAtDate = formatJst(new Date(profile!.joined_at), 'yyyy-MM-dd');
+
+    // 出勤データの取得を全て並列化
+    const [attendancesResult, totalActivityTimeInHours, distinctDatesResult, totalClubActivityDatesResult] = await Promise.all([
       supabase.schema('attendance').from('attendances').select('*').eq('user_id', user!.id).order('timestamp', { ascending: false }).limit(5),
-      calculateTotalActivityTime(user!.id, 30)
+      calculateTotalActivityTime(user!.id, 30),
+      supabase
+        .schema('attendance')
+        .from('attendances')
+        .select('date')
+        .eq('user_id', user!.id)
+        .eq('type', 'in')
+        .gte('date', thirtyDaysAgo),
+      supabase
+        .schema('attendance')
+        .from('attendances')
+        .select('date')
+        .eq('type', 'in')
+        .gte('date', thirtyDaysAgo)
+        .gte('date', userCreatedAtDate),
     ]);
-    
-    const { data: attendances } = attendancesResult;
 
-    const { data: distinctDates } = await supabase
-      .schema('attendance')
-      .from('attendances')
-      .select('date')
-      .eq('user_id', user!.id)
-      .eq('type', 'in')
-      .gte('date', thirtyDaysAgo);
+    const { data: attendances } = attendancesResult;
+    const { data: distinctDates } = distinctDatesResult;
+    const { data: totalClubActivityDates } = totalClubActivityDatesResult;
 
     const userAttendanceDays = distinctDates ? new Set(distinctDates.map(d => d.date)).size : 0;
-    
-    const { data: totalClubActivityDates } = await supabase
-      .schema('attendance')
-      .from('attendances')
-      .select('date')
-      .eq('type', 'in')
-      .gte('date', thirtyDaysAgo)
-      .gte('date', userCreatedAtDate); 
-    
     const totalClubDays = totalClubActivityDates ? new Set(totalClubActivityDates.map(d => d.date)).size : 0;
 
     const attendanceRate = totalClubDays > 0 ? (userAttendanceDays / totalClubDays) * 100 : 0;
-    
-    const isAdmin = profile?.is_admin;
-    const teamName = profile?.teams?.[0]?.teams?.name;
+
+    const teamName = profile?.member_team_relations?.[0]?.teams?.name;
 
   return (
     <div className="space-y-6">
+        {!hasCardId && (
+            <CardMigrationAlert
+                userId={user!.id}
+                firstname={firstname}
+                lastname={lastname}
+            />
+        )}
+        
         <div className="flex justify-between items-start">
             <div>
                 <h1 className="text-3xl font-bold">マイダッシュボード</h1>
-                <p className="text-muted-foreground">こんにちは, {profile?.display_name}さん！</p>
+                <p className="text-muted-foreground">こんにちは, {displayName}さん！</p>
             </div>
             <div className="text-right">
                 {teamName && <Badge variant="secondary">{teamName}</Badge>}
@@ -91,7 +131,7 @@ export default async function DashboardPage() {
             </div>
         </div>
       
-        <div className="grid gap-4 grid-cols-2 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">出勤日数</CardTitle>
@@ -110,7 +150,7 @@ export default async function DashboardPage() {
                     <Clock className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                    <div className="text-2xl font-bold">{totalActivityTime.toFixed(1)} 時間</div>
+                    <div className="text-2xl font-bold">{totalActivityTimeInHours.toFixed(1)} 時間</div>
                     <p className="text-xs text-muted-foreground">
                         過去30日間
                     </p>
@@ -161,7 +201,7 @@ export default async function DashboardPage() {
                                             {att.type === 'in' ? '出勤' : '退勤'}
                                         </Badge>
                                     </TableCell>
-                                    <TableCell>{format(new Date(att.timestamp), 'yyyy/MM/dd HH:mm:ss', {locale: ja})}</TableCell>
+                                    <TableCell>{formatJst(new Date(att.timestamp), 'yyyy/MM/dd HH:mm:ss')}</TableCell>
                                     <TableCell><ClientRelativeTime date={att.timestamp} /></TableCell>
                                 </TableRow>
                             )) : (
@@ -178,7 +218,7 @@ export default async function DashboardPage() {
                 <CardTitle>出勤カレンダー</CardTitle>
                 </CardHeader>
                 <CardContent>
-                {isAdmin ? <AdminAttendanceCalendar /> : <AttendanceCalendar userId={user!.id} />}
+                    <AttendanceCalendar userId={user!.id} />
                 </CardContent>
             </Card>
         </div>

@@ -1,57 +1,70 @@
-import { getTempRegistration, getAllTeams } from '@/app/actions';
+
+import { getTempRegistration } from '@/app/actions';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import RegisterPageClient from './page-client';
 import { Suspense } from 'react';
+import { fetchMemberNickname } from '@/lib/name-api';
 
 export const dynamic = 'force-dynamic';
 
-async function RegisterPageImpl({ params }: { params: { token: string } }) {
-    if (params.token === 'unregistered') {
-        return <RegisterPageClient token={params.token} />;
+async function RegisterPageImpl({ params }: { params: Promise<{ token: string }> }) {
+    const resolvedParams = await params;
+    
+    if (resolvedParams.token === 'card-unregistered') {
+        return <RegisterPageClient token={resolvedParams.token} />;
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
     const { data: { session } } = await supabase.auth.getSession();
     
-    const [tempRegResult, teamsResult] = await Promise.all([
-        getTempRegistration(params.token),
-        getAllTeams()
-    ]);
+    const tempReg = await getTempRegistration(resolvedParams.token);
     
-    const tempReg = tempRegResult;
-    const { data: teams } = teamsResult;
+    let displayName: string | null = null;
+    let existingCardId: string | null = null;
     
-    let fullProfile = null;
     if (session?.user?.id) {
-        const { data } = await supabase.schema('member').from('members').select(`
-            *,
-            attendance_user:attendance_users(card_id),
-            teams:member_team_relations(teams(name))
-        `).eq('id', session.user.id).single();
-        // @ts-ignore
-        if (data) {
-             fullProfile = {
-                ...data,
-                // @ts-ignore
-                teams: data.teams[0]?.teams,
-                // @ts-ignore
-                attendance_user: data.attendance_user[0]
+        const { data: memberProfile } = await supabase
+            .schema('member')
+            .from('members')
+            .select('discord_uid')
+            .eq('supabase_auth_user_id', session.user.id)
+            .single();
+        
+        if (memberProfile?.discord_uid) {
+            try {
+                const { data: nickname } = await fetchMemberNickname(memberProfile.discord_uid);
+                if (nickname) {
+                    displayName = nickname;
+                }
+            } catch (e) {
+                console.error('Failed to fetch nickname:', e);
             }
+        }
+        
+        const { data: attendanceUser } = await supabase
+            .schema('attendance')
+            .from('users')
+            .select('card_id')
+            .eq('supabase_auth_user_id', session.user.id)
+            .single();
+
+        if (attendanceUser) {
+            existingCardId = attendanceUser.card_id;
         }
     }
 
     return (
         <RegisterPageClient 
-            token={params.token}
+            token={resolvedParams.token}
             tempReg={tempReg}
-            teams={teams || []}
             session={session}
-            fullProfile={fullProfile}
+            displayName={displayName}
+            existingCardId={existingCardId}
         />
     );
 }
 
-export default function RegisterPage({ params }: { params: { token: string } }) {
+export default function RegisterPage({ params }: { params: Promise<{ token: string }> }) {
     return (
         <Suspense fallback={<div>Loading...</div>}>
             <RegisterPageImpl params={params} />
