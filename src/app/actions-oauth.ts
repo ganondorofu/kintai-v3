@@ -5,9 +5,10 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 export async function signInWithSTEM() {
-  const authEndpoint = process.env.NEXT_PUBLIC_STEM_OAUTH_URL || 'http://localhost:3000/oauth/authorize';
+  const oauthBaseUrl = (process.env.NEXT_PUBLIC_STEM_OAUTH_BASE_URL || 'http://localhost:3000/oauth').replace(/\/$/, '');
   const clientId = process.env.STEM_OAUTH_CLIENT_ID!;
-  const redirectUri = process.env.NEXT_PUBLIC_STEM_OAUTH_REDIRECT_URI!;
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001').replace(/\/$/, '');
+  const redirectUri = `${appUrl}/auth/oauth/callback`;
 
   // PKCE パラメータを生成
   const codeVerifier = generateCodeVerifier();
@@ -34,7 +35,7 @@ export async function signInWithSTEM() {
 
   // OAuth 認可URLを構築してリダイレクト
   const authUrl = buildAuthorizationUrl({
-    authorizationEndpoint: authEndpoint,
+    authorizationEndpoint: `${oauthBaseUrl}/authorize`,
     clientId,
     redirectUri,
     codeChallenge,
