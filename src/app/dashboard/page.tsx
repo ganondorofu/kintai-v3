@@ -113,7 +113,11 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-6">
         {!hasCardId && (
-            <CardMigrationAlert />
+            <CardMigrationAlert
+                userId={user!.id}
+                firstname={firstname}
+                lastname={lastname}
+            />
         )}
         
         <div className="flex justify-between items-start">

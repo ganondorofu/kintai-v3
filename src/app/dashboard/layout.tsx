@@ -155,28 +155,13 @@ export default async function DashboardLayout({
 
   const { data: attendanceUser, error: attendanceError } = attendanceUserResult;
 
-  // attendanceUserレコード自体が存在しない場合は自動作成
+  // attendanceUserレコード自体が存在しない場合はカード未登録画面へ
   if (attendanceError?.code === 'PGRST116' || !attendanceUser) {
-    console.log('No attendance user record found, auto-creating with temp card_id:', user.id);
-    
-    // attendance.users レコードを自動作成
-    const adminClient = await createSupabaseAdminClient();
-    const { error: createError } = await adminClient
-      .schema('attendance')
-      .from('users')
-      .insert({
-        supabase_auth_user_id: user.id,
-        card_id: `TEMP_${user.id}`,  // 一時的なカードID（後でQRコードで実際のカードIDに更新可能）
-      });
-    
-    if (createError) {
-      console.error('Failed to auto-create attendance user:', createError);
-      return redirect("/register/card-unregistered");
-    }
-    
-    console.log('Auto-created attendance.users record with temp card_id');
-    // 作成後、そのまま続行（attendanceUserは使われない）
-  } else if (attendanceError) {
+    console.log('No attendance user record found, redirecting to card registration:', user.id);
+    return redirect("/register/card-unregistered");
+  }
+
+  if (attendanceError) {
     console.error('Unexpected error fetching attendance user:', attendanceError);
     return redirect("/register/card-unregistered");
   }
