@@ -1,11 +1,17 @@
 'use server';
 
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/auth-guard";
 
 /**
- * 仮登録情報を全件取得
+ * 仮登録情報を全件取得（管理者専用）
  */
 export async function getTempRegistrations() {
+    const { isAdmin } = await requireAdmin();
+    if (!isAdmin) {
+        return { data: [], error: { message: 'Unauthorized: admin access required' } };
+    }
+
     const supabase = await createSupabaseAdminClient();
     return supabase
         .schema('attendance')
@@ -105,9 +111,14 @@ export async function completeTempRegistration(token: string, cardId: string) {
 }
 
 /**
- * 仮登録を削除
+ * 仮登録を削除（管理者専用）
  */
 export async function deleteTempRegistration(token: string) {
+    const { isAdmin } = await requireAdmin();
+    if (!isAdmin) {
+        return { data: null, error: { message: 'Unauthorized: admin access required' } };
+    }
+
     const supabase = await createSupabaseAdminClient();
     
     return supabase

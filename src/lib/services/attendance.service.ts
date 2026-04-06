@@ -1,13 +1,19 @@
 'use server';
 
 import { createSupabaseAdminClient, createSupabaseServerClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/auth-guard";
 import { revalidatePath } from "next/cache";
 import { format, startOfMonth, endOfMonth, subDays, startOfDay, endOfDay } from 'date-fns';
 
 /**
- * ユーザーの出退勤を強制的に切り替える
+ * ユーザーの出退勤を強制的に切り替える（管理者専用）
  */
 export async function forceToggleAttendance(userId: string) {
+    const { isAdmin } = await requireAdmin();
+    if (!isAdmin) {
+        return { success: false, message: 'Unauthorized: admin access required' };
+    }
+
     const supabase = await createSupabaseAdminClient();
 
     try {

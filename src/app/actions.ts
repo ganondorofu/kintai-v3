@@ -276,9 +276,7 @@ export async function signInWithDiscord(formData?: FormData) {
     const supabase = await createSupabaseServerClient();
     const next = formData?.get('next') as string | undefined;
     
-    console.log('[AUTH SIGNIN] ========================================');
-    console.log('[AUTH SIGNIN] Timestamp:', new Date().toISOString());
-    console.log('[AUTH SIGNIN] Next parameter:', next);
+    console.log('[AUTH SIGNIN] Initiating Discord OAuth');
     
     // 登録ページから来た場合、nextパラメータをCookieに保存
     if (next) {
@@ -289,7 +287,7 @@ export async function signInWithDiscord(formData?: FormData) {
             maxAge: 600, // 10分
             path: '/'
         });
-        console.log('[AUTH SIGNIN] Saved auth_next cookie:', next);
+        // auth_next cookie saved for post-login redirect
     }
     
     const redirectTo = `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`;

@@ -1,12 +1,19 @@
 'use server';
 
 import { createSupabaseAdminClient } from '@/lib/supabase/server';
+import { requireAdmin } from '@/lib/auth-guard';
 import { revalidatePath } from 'next/cache';
 
 /**
- * 全ユーザーを強制退勤させる
+ * 全ユーザーを強制退勤させる（管理者専用）
  */
 export async function forceLogoutAll() {
+    // Admin authorization check
+    const { isAdmin } = await requireAdmin();
+    if (!isAdmin) {
+        return { success: false, message: '管理者権限が必要です。' };
+    }
+
     const supabase = await createSupabaseAdminClient();
     
     const { data: currentlyIn, error: currentlyInError } = await (supabase as any)

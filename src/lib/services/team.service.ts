@@ -1,6 +1,7 @@
 'use server';
 
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/auth-guard";
 
 /**
  * 全チームを取得
@@ -125,9 +126,14 @@ export async function getTeamWithMembersStatus(teamId: number) {
 }
 
 /**
- * 新しいチームを作成
+ * 新しいチームを作成（管理者専用）
  */
 export async function createTeam(name: string) {
+    const { isAdmin } = await requireAdmin();
+    if (!isAdmin) {
+        return { data: null, error: { message: 'Unauthorized: admin access required' } };
+    }
+
     const supabase = await createSupabaseAdminClient();
     return supabase
         .schema('member')
@@ -138,9 +144,14 @@ export async function createTeam(name: string) {
 }
 
 /**
- * チーム情報を更新
+ * チーム情報を更新（管理者専用）
  */
 export async function updateTeam(id: string, name: string) {
+    const { isAdmin } = await requireAdmin();
+    if (!isAdmin) {
+        return { data: null, error: { message: 'Unauthorized: admin access required' } };
+    }
+
     const supabase = await createSupabaseAdminClient();
     return supabase
         .schema('member')
@@ -152,18 +163,23 @@ export async function updateTeam(id: string, name: string) {
 }
 
 /**
- * チームを削除
+ * チームを削除（管理者専用）
  */
 export async function deleteTeam(id: string) {
+    const { isAdmin } = await requireAdmin();
+    if (!isAdmin) {
+        return { data: null, error: { message: 'Unauthorized: admin access required' } };
+    }
+
     const supabase = await createSupabaseAdminClient();
-    
+
     // 先に関連するmember_team_relationsを削除
     await supabase
         .schema('member')
         .from('member_team_relations')
         .delete()
         .eq('team_id', id);
-    
+
     return supabase
         .schema('member')
         .from('teams')
