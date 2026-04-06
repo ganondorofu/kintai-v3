@@ -1,6 +1,7 @@
 'use server';
 
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/auth-guard";
 import { fetchMemberNickname } from "@/lib/name-api";
 
 type UserWithDetails = {
@@ -22,6 +23,11 @@ type UserWithDetails = {
  * すべてのユーザー情報を取得（管理画面用）
  */
 export async function getAllUsersWithStatus(): Promise<{ data: UserWithDetails[], error: any }> {
+    const { isAdmin } = await requireAdmin();
+    if (!isAdmin) {
+        return { data: [], error: 'Unauthorized: admin access required' };
+    }
+
     const supabase = await createSupabaseAdminClient();
 
     try {
@@ -119,9 +125,14 @@ export async function getAllUsersWithStatus(): Promise<{ data: UserWithDetails[]
 }
 
 /**
- * ユーザーの表示名を更新
+ * ユーザーの表示名を更新（管理者専用）
  */
 export async function updateUserDisplayName(userId: string, displayName: string) {
+    const { isAdmin } = await requireAdmin();
+    if (!isAdmin) {
+        return { success: false, error: 'Unauthorized: admin access required' };
+    }
+
     const supabase = await createSupabaseAdminClient();
     
     const { error } = await supabase
@@ -134,9 +145,14 @@ export async function updateUserDisplayName(userId: string, displayName: string)
 }
 
 /**
- * 全ユーザーの表示名を一括更新
+ * 全ユーザーの表示名を一括更新（管理者専用）
  */
 export async function updateAllUserDisplayNames() {
+    const { isAdmin } = await requireAdmin();
+    if (!isAdmin) {
+        return { success: false, message: 'Unauthorized: admin access required' };
+    }
+
     const supabase = await createSupabaseAdminClient();
 
     try {
@@ -192,9 +208,14 @@ export async function updateAllUserDisplayNames() {
 }
 
 /**
- * ユーザーのカードIDを更新
+ * ユーザーのカードIDを更新（管理者専用）
  */
 export async function updateUserCardId(userId: string, newCardId: string) {
+    const { isAdmin } = await requireAdmin();
+    if (!isAdmin) {
+        return { success: false, message: 'Unauthorized: admin access required' };
+    }
+
     const supabase = await createSupabaseAdminClient();
 
     try {
